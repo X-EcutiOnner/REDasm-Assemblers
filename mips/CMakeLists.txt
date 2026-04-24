@@ -1,9 +1,23 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(MIPS)
-find_package(REDasm REQUIRED)
+project(mips C)
 
-file(GLOB_RECURSE HEADERS *.h*)
-file(GLOB_RECURSE SOURCES *.cpp)
+if(NOT TARGET redasm::redasm)
+    find_package(redasm REQUIRED)
+endif()
 
-redasm_plugin(${PROJECT_NAME} ${ASSEMBLER_TYPE} ${HEADERS} ${SOURCES})
+add_library(${PROJECT_NAME} SHARED)
+
+target_sources(${PROJECT_NAME}
+    PRIVATE 
+        formats.c
+        instructions.c
+        macros.c
+        plugin.c
+        registers.c
+)
+
+target_link_libraries(${PROJECT_NAME} 
+    PRIVATE 
+        redasm::redasm
+)

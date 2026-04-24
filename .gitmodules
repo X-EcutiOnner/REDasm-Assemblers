@@ -1,6 +1,0 @@
-[submodule "x86/zydis"]
-	path = x86/zydis
-	url = https://github.com/zyantific/zydis.git
-[submodule "capstonebundle/capstone"]
-	path = capstonebundle/capstone
-	url = https://github.com/aquynh/capstone.git
