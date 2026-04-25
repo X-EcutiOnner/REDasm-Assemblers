@@ -7,9 +7,9 @@ static void _mips_handle_operands(RDContext* ctx, const RDInstruction* instr) {
     rd_foreach_operand(i, op, instr) {
         switch(op->kind) {
             case RD_OP_ADDR: {
-                if(instr->features & RD_IF_CALL)
+                if(rd_is_call(instr))
                     rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-                else if(instr->features & RD_IF_JUMP)
+                else if(rd_is_jump(instr))
                     rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
                 break;
             };
@@ -26,16 +26,22 @@ static void _mips_render_mnemonic(const RDInstruction* instr, RDRenderer* r) {
         default: break;
     }
 
-    RDThemeKind theme = RD_THEME_DEFAULT;
+    switch(instr->flow) {
+        case RD_IF_JUMP: rd_renderer_mnem(r, instr, RD_THEME_JUMP); break;
 
-    if(instr->features & RD_IF_JUMP) {
-        theme = mips_is_jump_cond(instr) ? RD_THEME_JUMP_COND : RD_THEME_JUMP;
+        case RD_IF_JUMP_COND:
+            rd_renderer_mnem(r, instr, RD_THEME_JUMP_COND);
+            break;
+
+        case RD_IF_CALL: rd_renderer_mnem(r, instr, RD_THEME_CALL); break;
+
+        case RD_IF_CALL_COND:
+            rd_renderer_mnem(r, instr, RD_THEME_CALL_COND);
+            break;
+
+        case RD_IF_STOP: rd_renderer_mnem(r, instr, RD_THEME_STOP); break;
+        default: rd_renderer_mnem(r, instr, RD_THEME_DEFAULT); break;
     }
-
-    if(instr->features & RD_IF_CALL) theme = RD_THEME_CALL;
-    if(instr->features & RD_IF_STOP) theme = RD_THEME_RET;
-
-    rd_renderer_mnem(r, instr, theme);
 }
 
 static void _mips32_process_decoded(RDContext* ctx, MIPSDecodedInstruction* dec,
@@ -58,14 +64,10 @@ static void _mips32_process_decoded(RDContext* ctx, MIPSDecodedInstruction* dec,
     }
 
     switch(dec->opcode->category) {
-        case MIPS_CATEGORY_CALL: instr->features |= RD_IF_CALL; break;
-        case MIPS_CATEGORY_RET: instr->features |= RD_IF_STOP; break;
-        case MIPS_CATEGORY_JUMP_COND: instr->features |= RD_IF_JUMP; break;
-
-        case MIPS_CATEGORY_JUMP:
-            instr->features |= RD_IF_JUMP | RD_IF_STOP;
-            break;
-
+        case MIPS_CATEGORY_CALL: instr->flow = RD_IF_CALL; break;
+        case MIPS_CATEGORY_RET: instr->flow = RD_IF_STOP; break;
+        case MIPS_CATEGORY_JUMP_COND: instr->flow = RD_IF_JUMP_COND; break;
+        case MIPS_CATEGORY_JUMP: instr->flow = RD_IF_JUMP; break;
         default: break;
     }
 }
@@ -126,15 +128,14 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
         default: _mips_handle_operands(ctx, instr); break;
     }
 
-    if(instr->features & RD_IF_DSLOT) {
+    if(rd_is_delay_slot(instr)) {
         RDDelaySlotInfo dslot = rd_get_delay_slot_info(ctx);
 
-        if(dslot.n == dslot.instr.delay_slots &&
-           (dslot.instr.features & RD_IF_STOP))
+        if(dslot.n == dslot.instr.delay_slots && dslot.instr.flow == RD_IF_STOP)
             return;
     }
 
-    if(!(instr->features & RD_IF_STOP) || instr->delay_slots)
+    if(rd_can_flow(instr) || instr->delay_slots)
         rd_flow(ctx, instr->address + instr->length);
 }
 

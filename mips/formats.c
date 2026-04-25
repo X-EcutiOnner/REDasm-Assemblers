@@ -260,7 +260,7 @@ void mips_decode_j(const MIPSDecodedInstruction* dec, RDInstruction* instr) {
 }
 
 void mips_decode_b(const MIPSDecodedInstruction* dec, RDInstruction* instr) {
-    if(dec->opcode->id == MIPS_INSTR_BREAK) instr->features |= RD_IF_STOP;
+    if(dec->opcode->id == MIPS_INSTR_BREAK) instr->flow = RD_IF_STOP;
 }
 
 bool mips_has_delay_slot(usize id) {
@@ -277,21 +277,6 @@ bool mips_has_delay_slot(usize id) {
         case MIPS_INSTR_JAL:
         case MIPS_INSTR_JALR:
         case MIPS_INSTR_JR: return true;
-
-        default: break;
-    }
-
-    return false;
-}
-
-bool mips_is_jump_cond(const RDInstruction* instr) {
-    switch(instr->id) {
-        case MIPS_INSTR_BEQ:
-        case MIPS_INSTR_BNE:
-        case MIPS_INSTR_BGEZ:
-        case MIPS_INSTR_BGTZ:
-        case MIPS_MACRO_BEQZ:
-        case MIPS_MACRO_BNEZ: return true;
 
         default: break;
     }

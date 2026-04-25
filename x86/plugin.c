@@ -65,10 +65,6 @@ static RDAddress x86_get_ip_value(const RDInstruction* instr) {
     return instr->address + instr->length;
 }
 
-static bool x86_is_branch_instruction(const RDInstruction* instr) {
-    return (instr->features & (RD_IF_JUMP | RD_IF_CALL));
-}
-
 static bool x86_is_addr_operand(const RDContext* ctx,
                                 const RDInstruction* instr,
                                 const ZydisDecodedOperand* zop) {
@@ -181,14 +177,10 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
     instr->length = zinstr.length;
 
     switch(zinstr.meta.category) {
-        case ZYDIS_CATEGORY_CALL: instr->features |= RD_IF_CALL; break;
-        case ZYDIS_CATEGORY_COND_BR: instr->features |= RD_IF_JUMP; break;
-        case ZYDIS_CATEGORY_NOP: instr->features |= RD_IF_NOP; break;
-
-        case ZYDIS_CATEGORY_UNCOND_BR:
-            instr->features |= RD_IF_JUMP | RD_IF_STOP;
-            break;
-
+        case ZYDIS_CATEGORY_CALL: instr->flow = RD_IF_CALL; break;
+        case ZYDIS_CATEGORY_NOP: instr->flow = RD_IF_NOP; break;
+        case ZYDIS_CATEGORY_COND_BR: instr->flow = RD_IF_JUMP_COND; break;
+        case ZYDIS_CATEGORY_UNCOND_BR: instr->flow = RD_IF_JUMP; break;
         default: break;
     };
 
@@ -209,7 +201,7 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
             case ZYDIS_OPERAND_TYPE_IMMEDIATE: {
                 ZyanU64 addr = 0;
 
-                if(x86_is_branch_instruction(instr) &&
+                if(rd_is_jump(instr) &&
                    ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
                        &zinstr, zop, instr->address, &addr))) {
                     op->kind = RD_OP_ADDR;
@@ -241,8 +233,7 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
 
                     ZyanU64 addr;
 
-                    if((instr->features & RD_IF_JUMP ||
-                        instr->features & RD_IF_CALL) &&
+                    if(rd_is_branch(instr) &&
                        ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
                            &zinstr, zop, instr->address, &addr))) {
                         op->mem = addr;
@@ -276,7 +267,7 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
         case ZYDIS_MNEMONIC_HLT:
         case ZYDIS_MNEMONIC_INT3:
         case ZYDIS_MNEMONIC_RET:
-        case ZYDIS_MNEMONIC_IRET: instr->features |= RD_IF_STOP; break;
+        case ZYDIS_MNEMONIC_IRET: instr->flow = RD_IF_STOP; break;
 
         case ZYDIS_MNEMONIC_INT:
             // rd_getenvironment()->update_instruction(instr);
@@ -290,20 +281,23 @@ static void x86_render_instruction(RDRenderer* r, const RDInstruction* instr,
                                    RDProcessor* proc) {
     RD_UNUSED(proc);
 
-    if(instr->features & RD_IF_STOP) {
-        if(instr->features & RD_IF_JUMP)
-            rd_renderer_mnem(r, instr, RD_THEME_JUMP);
-        else
-            rd_renderer_mnem(r, instr, RD_THEME_RET);
+    switch(instr->flow) {
+        case RD_IF_JUMP: rd_renderer_mnem(r, instr, RD_THEME_JUMP); break;
+
+        case RD_IF_JUMP_COND:
+            rd_renderer_mnem(r, instr, RD_THEME_JUMP_COND);
+            break;
+
+        case RD_IF_CALL: rd_renderer_mnem(r, instr, RD_THEME_CALL); break;
+
+        case RD_IF_CALL_COND:
+            rd_renderer_mnem(r, instr, RD_THEME_CALL_COND);
+            break;
+
+        case RD_IF_NOP: rd_renderer_mnem(r, instr, RD_THEME_MUTED); break;
+        case RD_IF_STOP: rd_renderer_mnem(r, instr, RD_THEME_STOP); break;
+        default: rd_renderer_mnem(r, instr, RD_THEME_FOREGROUND); break;
     }
-    else if(instr->features & RD_IF_JUMP)
-        rd_renderer_mnem(r, instr, RD_THEME_JUMP_COND);
-    else if(instr->features & RD_IF_CALL)
-        rd_renderer_mnem(r, instr, RD_THEME_CALL);
-    else if(instr->features & RD_IF_NOP)
-        rd_renderer_mnem(r, instr, RD_THEME_MUTED);
-    else
-        rd_renderer_mnem(r, instr, RD_THEME_FOREGROUND);
 
     rd_foreach_operand(i, op, instr) {
         if(i > 0) rd_renderer_norm(r, ", ");
@@ -375,9 +369,9 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
         rd_foreach_operand(i, op, instr) {
             switch(op->kind) {
                 case RD_OP_ADDR: {
-                    if(instr->features & RD_IF_JUMP)
+                    if(rd_is_jump(instr))
                         rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
-                    else if(instr->features & RD_IF_CALL)
+                    else if(rd_is_call(instr))
                         rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
                     else {
                         rd_add_xref(ctx, instr->address, op->addr,
@@ -388,14 +382,14 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
                 }
 
                 case RD_OP_MEM: {
-                    if(instr->features & RD_IF_JUMP) {
+                    if(rd_is_jump(instr)) {
                         X86Address addr = x86_read_address(ctx, op->mem);
                         if(addr.has_value) {
                             rd_add_xref(ctx, instr->address, addr.value,
                                         RD_CR_JUMP);
                         }
                     }
-                    else if(instr->features & RD_IF_CALL) {
+                    else if(rd_is_call(instr)) {
                         X86Address addr = x86_read_address(ctx, op->mem);
                         if(addr.has_value) {
                             rd_add_xref(ctx, instr->address, addr.value,
@@ -414,8 +408,7 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
         }
     }
 
-    if(!(instr->features & RD_IF_STOP))
-        rd_flow(ctx, instr->address + instr->length);
+    if(rd_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
 static RDProcessor* x86_processor_create(const RDProcessorPlugin* plugin) {

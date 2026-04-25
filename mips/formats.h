@@ -102,8 +102,6 @@ void mips_decode_j(const MIPSDecodedInstruction* dec, RDInstruction* instr);
 void mips_decode_b(const MIPSDecodedInstruction* dec, RDInstruction* instr);
 
 bool mips_has_delay_slot(usize id);
-bool mips_is_jump_cond(const RDInstruction* instr);
-
 bool mips_decode_one_be(RDContext* ctx, RDAddress address,
                         MIPSDecodedInstruction* dec);
 bool mips_decode_one_le(RDContext* ctx, RDAddress address,
