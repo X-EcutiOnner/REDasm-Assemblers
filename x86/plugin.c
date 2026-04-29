@@ -276,8 +276,8 @@ static void x86_decode(const RDContext* ctx, RDInstruction* instr,
     }
 }
 
-static void x86_render_instruction(RDRenderer* r, const RDInstruction* instr,
-                                   RDProcessor* proc) {
+static void x86_render_mnemonic(RDRenderer* r, const RDInstruction* instr,
+                                RDProcessor* proc) {
     RD_UNUSED(proc);
 
     switch(instr->flow) {
@@ -297,66 +297,67 @@ static void x86_render_instruction(RDRenderer* r, const RDInstruction* instr,
         case RD_IF_STOP: rd_renderer_mnem(r, instr, RD_THEME_STOP); break;
         default: rd_renderer_mnem(r, instr, RD_THEME_FOREGROUND); break;
     }
+}
 
-    rd_foreach_operand(i, op, instr) {
-        if(i > 0) rd_renderer_norm(r, ", ");
+static void x86_render_operand(RDRenderer* r, const RDInstruction* instr,
+                               usize idx, RDProcessor* proc) {
+    RD_UNUSED(proc);
+    const RDOperand* op = &instr->operands[idx];
 
-        switch(op->kind) {
-            case RD_OP_ADDR: rd_renderer_loc(r, op->addr, 0, 0); break;
+    switch(op->kind) {
+        case RD_OP_ADDR: rd_renderer_loc(r, op->addr, 0, 0); break;
 
-            case RD_OP_IMM:
-                rd_renderer_cnst(r, op->imm, 16, 0, RD_NUM_DEFAULT);
-                break;
+        case RD_OP_IMM:
+            rd_renderer_cnst(r, op->imm, 16, 0, RD_NUM_DEFAULT);
+            break;
 
-            case RD_OP_MEM: {
-                rd_renderer_norm(r, "[");
+        case RD_OP_MEM: {
+            rd_renderer_norm(r, "[");
 
-                if(op->userdata1 && op->userdata1 != ZYDIS_REGISTER_CS &&
-                   op->userdata1 != ZYDIS_REGISTER_DS) {
-                    rd_renderer_reg(r, op->userdata1);
-                    rd_renderer_norm(r, ":");
-                }
-
-                rd_renderer_loc(r, op->mem, 0, 0);
-                rd_renderer_norm(r, "]");
-                break;
+            if(op->userdata1 && op->userdata1 != ZYDIS_REGISTER_CS &&
+               op->userdata1 != ZYDIS_REGISTER_DS) {
+                rd_renderer_reg(r, op->userdata1);
+                rd_renderer_norm(r, ":");
             }
 
-            case RD_OP_REG: rd_renderer_reg(r, op->reg); break;
-
-            case RD_OP_PHRASE: {
-                rd_renderer_norm(r, "[");
-                rd_renderer_reg(r, op->phrase.base);
-                rd_renderer_norm(r, "+");
-                rd_renderer_reg(r, op->phrase.index);
-                rd_renderer_norm(r, "]");
-                break;
-            }
-
-            case RD_OP_DISPL: {
-                rd_renderer_norm(r, "[");
-                rd_renderer_reg(r, op->displ.base);
-
-                if(op->displ.index != ZYDIS_REGISTER_NONE) {
-                    rd_renderer_norm(r, "+");
-                    rd_renderer_reg(r, op->displ.index);
-
-                    if(op->displ.scale > 1) {
-                        rd_renderer_norm(r, "*");
-                        rd_renderer_cnst(r, op->displ.scale, 16, 0,
-                                         RD_NUM_DEFAULT);
-                    }
-                }
-
-                if(op->displ.displ != 0)
-                    rd_renderer_loc(r, op->displ.displ, 0, RD_NUM_SIGNED);
-
-                rd_renderer_norm(r, "]");
-                break;
-            }
-
-            default: break;
+            rd_renderer_loc(r, op->mem, 0, 0);
+            rd_renderer_norm(r, "]");
+            break;
         }
+
+        case RD_OP_REG: rd_renderer_reg(r, op->reg); break;
+
+        case RD_OP_PHRASE: {
+            rd_renderer_norm(r, "[");
+            rd_renderer_reg(r, op->phrase.base);
+            rd_renderer_norm(r, "+");
+            rd_renderer_reg(r, op->phrase.index);
+            rd_renderer_norm(r, "]");
+            break;
+        }
+
+        case RD_OP_DISPL: {
+            rd_renderer_norm(r, "[");
+            rd_renderer_reg(r, op->displ.base);
+
+            if(op->displ.index != ZYDIS_REGISTER_NONE) {
+                rd_renderer_norm(r, "+");
+                rd_renderer_reg(r, op->displ.index);
+
+                if(op->displ.scale > 1) {
+                    rd_renderer_norm(r, "*");
+                    rd_renderer_cnst(r, op->displ.scale, 16, 0, RD_NUM_DEFAULT);
+                }
+            }
+
+            if(op->displ.displ != 0)
+                rd_renderer_loc(r, op->displ.displ, 0, RD_NUM_SIGNED);
+
+            rd_renderer_norm(r, "]");
+            break;
+        }
+
+        default: break;
     }
 }
 
@@ -439,7 +440,7 @@ static const char* x86_processor_get_reg(int reg, RDProcessor* p) {
 }
 
 static const char** x86_processor_get_prologues(RDProcessor* p,
-                                                RDContext* ctx) {
+                                                const RDContext* ctx) {
     RD_UNUSED(ctx);
     X86Processor* self = (X86Processor*)p;
     return self->prologues;
@@ -462,7 +463,8 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
     plugin->decode = x86_decode;
     plugin->emulate = x86_emulate;
     plugin->lift = x86_lift;
-    plugin->render_instruction = x86_render_instruction;
+    plugin->render_mnemonic = x86_render_mnemonic;
+    plugin->render_operand = x86_render_operand;
     plugin->create = x86_processor_create;
     plugin->destroy = x86_processor_destroy;
     plugin->get_mnemonic = x86_processor_get_mnemonic;
