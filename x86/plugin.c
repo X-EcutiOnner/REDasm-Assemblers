@@ -484,11 +484,11 @@ static RDProcessorPlugin x86_64 = {0};
 
 void rd_plugin_create(void) {
     x86_register_processor(&x86_16_real, ZYDIS_MACHINE_MODE_REAL_16,
-                           ZYDIS_STACK_WIDTH_16, "x86_16_real",
-                           "X86_16 (Real Mode)", sizeof(u16), sizeof(u16));
+                           ZYDIS_STACK_WIDTH_16, "x86_16_real", "X86_16 (Real)",
+                           sizeof(u16), sizeof(u16));
 
     x86_register_processor(&x86_16, ZYDIS_MACHINE_MODE_LEGACY_16,
-                           ZYDIS_STACK_WIDTH_16, "x86_16", "X86_16",
+                           ZYDIS_STACK_WIDTH_16, "x86_16 (Protected)", "X86_16",
                            sizeof(u16), sizeof(u16));
 
     x86_register_processor(&x86_32, ZYDIS_MACHINE_MODE_LEGACY_32,

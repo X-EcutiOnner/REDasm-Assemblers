@@ -35,12 +35,11 @@ static bool _mips_can_simplify_lui(const MIPSDecodedInstruction* lui,
 
 static void _mips_patch_lui(const RDContext* ctx, MIPSDecodedInstruction* dec,
                             RDAddress address) {
-    const RDProcessorPlugin* p = rd_get_processor_plugin(ctx);
     RDAddress nextaddress = address + dec->length;
     MIPSDecodedInstruction next = {0};
     bool ok;
 
-    if(p->flags & RD_PF_BE)
+    if(rd_processor_get_flags(ctx) & RD_PF_BE)
         ok = mips_decode_one_be(ctx, nextaddress, &next);
     else
         ok = mips_decode_one_le(ctx, nextaddress, &next);
