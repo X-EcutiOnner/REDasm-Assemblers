@@ -73,7 +73,7 @@ static const char* _mips32_get_mnemonic(const RDInstruction* instr,
     return mips_get_mnemonic(instr->id);
 }
 
-static const char* _mips32_get_register(int r, RDProcessor* p) {
+static const char* _mips32_get_register_name(RDReg r, RDProcessor* p) {
     RD_UNUSED(p);
     return mips_get_register(r);
 }
@@ -173,7 +173,7 @@ static const RDProcessorPlugin MIPS32_BE = {
     .ptr_size = sizeof(u32),
     .int_size = sizeof(u32),
     .get_mnemonic = _mips32_get_mnemonic,
-    .get_register = _mips32_get_register,
+    .get_register_name = _mips32_get_register_name,
     .decode = _mips32_decode_be,
     .emulate = _mips32_emulate,
     .render_mnemonic = _mips32_render_mnemonic,
@@ -188,7 +188,7 @@ static const RDProcessorPlugin MIPS32_LE = {
     .ptr_size = sizeof(u32),
     .int_size = sizeof(u32),
     .get_mnemonic = _mips32_get_mnemonic,
-    .get_register = _mips32_get_register,
+    .get_register_name = _mips32_get_register_name,
     .decode = _mips32_decode_le,
     .emulate = _mips32_emulate,
     .render_mnemonic = _mips32_render_mnemonic,

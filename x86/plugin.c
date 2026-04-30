@@ -1,13 +1,10 @@
 #include "x86_common.h"
 #include "x86_lifter.h"
+#include "x86_registers.h"
 #include <Zydis/Zydis.h>
 #include <redasm/redasm.h>
 #include <stdlib.h>
-
-static const int SEGMENT_REGISTERS[6] = {
-    ZYDIS_REGISTER_ES, ZYDIS_REGISTER_CS, ZYDIS_REGISTER_SS,
-    ZYDIS_REGISTER_DS, ZYDIS_REGISTER_FS, ZYDIS_REGISTER_GS,
-};
+#include <string.h>
 
 // clang-format off
 static const char* x86_16_prologues[] = {
@@ -44,30 +41,9 @@ typedef struct X86Processor {
     // const RDCallingConvention** calling_conventions{nullptr};
 } X86Processor;
 
-static bool x86_is_segment_reg(const RDOperand* op) {
-    if(op->kind != RD_OP_REG) return false;
-
-    switch(op->reg) {
-        case ZYDIS_REGISTER_ES:
-        case ZYDIS_REGISTER_CS:
-        case ZYDIS_REGISTER_SS:
-        case ZYDIS_REGISTER_DS:
-        case ZYDIS_REGISTER_FS:
-        case ZYDIS_REGISTER_GS: return true;
-
-        default: break;
-    }
-
-    return false;
-}
-
-static RDAddress x86_get_ip_value(const RDInstruction* instr) {
-    return instr->address + instr->length;
-}
-
-static bool x86_is_addr_operand(const RDContext* ctx,
-                                const RDInstruction* instr,
-                                const ZydisDecodedOperand* zop) {
+static bool _x86_is_addr_operand(const RDContext* ctx,
+                                 const RDInstruction* instr,
+                                 const ZydisDecodedOperand* zop) {
     if(zop->type != ZYDIS_OPERAND_TYPE_IMMEDIATE) return false;
     if(!rd_is_address(ctx, zop->imm.value.u)) return false;
 
@@ -80,8 +56,8 @@ static bool x86_is_addr_operand(const RDContext* ctx,
     return false;
 }
 
-static void x86_try_set_type(RDContext* ctx, const RDOperand* op,
-                             RDAddress address) {
+static void _x86_try_set_type(RDContext* ctx, const RDOperand* op,
+                              RDAddress address) {
     const RDSegment* seg = rd_find_segment(ctx, address);
     if(!seg || (seg->perm & RD_SP_X)) return;
 
@@ -96,68 +72,6 @@ static void x86_try_set_type(RDContext* ctx, const RDOperand* op,
     }
 
     rd_auto_type(ctx, address, t, op->count, RD_TYPE_NONE);
-}
-
-// static RDRegValue x86_get_reg_val(RDEmulator* e, int reg) {
-//     if(reg == ZYDIS_REGISTER_CS) {
-//         const RDSegment* seg = rdemulator_getsegment(e);
-//         if(seg) return RDRegValue_some(seg->start);
-//     }
-//
-//     auto val = rdemulator_getreg(e, reg);
-//
-//     if(!val.ok && reg == ZYDIS_REGISTER_DS) {
-//         const RDSegment* seg = rdemulator_getsegment(e);
-//         if(seg) return RDRegValue_some(seg->start);
-//     }
-//
-//     return val;
-// }
-
-bool x86_track_pop_reg(RDContext* ctx, const RDInstruction* instr) {
-    //     RDInstruction previnstr;
-    //     bool ok = rd_decode_prev(instr->address, &previnstr);
-    //     RDRegValue val = RDRegValue_none();
-    //
-    //     if(ok && previnstr.id == ZYDIS_MNEMONIC_PUSH &&
-    //        previnstr.operands[0].type == OP_REG) {
-    //         val = get_reg_val(e, previnstr.operands[0].reg);
-    //     }
-    //     else
-    //         val = get_reg_val(e, instr->operands[0].reg);
-    //
-    //     if(val.ok) {
-    //         rd_setsreg(instr->address + instr->length,
-    //         instr->operands[0].reg,
-    //                    val.value);
-    //     }
-    //
-    //     return val.ok;
-    return false;
-}
-
-bool x86_track_mov_reg(RDContext* ctx, const RDInstruction* instr) {
-    //     auto val = get_reg_val(e, instr->operands[0].reg);
-    //
-    //     if(val.ok) {
-    //         rd_setsreg(instr->address + instr->length,
-    //         instr->operands[0].reg,
-    //                    val.value);
-    //     }
-    //
-    return false;
-}
-
-bool x86_track_segment_reg(RDContext* ctx, const RDInstruction* instr) {
-    if(instr->id == ZYDIS_MNEMONIC_POP &&
-       x86_is_segment_reg(&instr->operands[0]))
-        return x86_track_pop_reg(ctx, instr);
-
-    if(instr->id == ZYDIS_MNEMONIC_MOV &&
-       x86_is_segment_reg(&instr->operands[0]))
-        return x86_track_mov_reg(ctx, instr);
-
-    return false;
 }
 
 static void x86_decode(RDContext* ctx, RDInstruction* instr,
@@ -207,7 +121,7 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
                     op->kind = RD_OP_ADDR;
                     op->addr = addr;
                 }
-                else if(x86_is_addr_operand(ctx, instr, zop)) {
+                else if(_x86_is_addr_operand(ctx, instr, zop)) {
                     op->kind = RD_OP_ADDR;
                     op->addr = zop->imm.value.u;
                 }
@@ -366,14 +280,20 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
                         RDProcessor* proc) {
     RD_UNUSED(proc);
 
+    if(instr->id == ZYDIS_MNEMONIC_MOV) x86_track_mov(ctx, instr);
+
     if(!x86_track_segment_reg(ctx, instr)) {
         rd_foreach_operand(i, op, instr) {
             switch(op->kind) {
                 case RD_OP_ADDR: {
-                    if(rd_is_jump(instr))
+                    if(rd_is_jump(instr)) {
+                        x86_snapshot_regs(ctx, instr, op->addr);
                         rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
-                    else if(rd_is_call(instr))
+                    }
+                    else if(rd_is_call(instr)) {
+                        x86_snapshot_regs(ctx, instr, op->addr);
                         rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
+                    }
                     else {
                         rd_add_xref(ctx, instr->address, op->addr,
                                     RD_DR_ADDRESS);
@@ -386,6 +306,7 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
                     if(rd_is_jump(instr)) {
                         X86Address addr = x86_read_address(ctx, op->mem);
                         if(addr.has_value) {
+                            x86_snapshot_regs(ctx, instr, addr.value);
                             rd_add_xref(ctx, instr->address, addr.value,
                                         RD_CR_JUMP);
                         }
@@ -393,12 +314,13 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
                     else if(rd_is_call(instr)) {
                         X86Address addr = x86_read_address(ctx, op->mem);
                         if(addr.has_value) {
+                            x86_snapshot_regs(ctx, instr, addr.value);
                             rd_add_xref(ctx, instr->address, addr.value,
                                         RD_CR_CALL);
                         }
                     }
                     else
-                        x86_try_set_type(ctx, op, op->mem);
+                        _x86_try_set_type(ctx, op, op->mem);
 
                     rd_add_xref(ctx, instr->address, op->mem, RD_DR_ADDRESS);
                     break;
@@ -435,9 +357,21 @@ static const char* x86_processor_get_mnemonic(const RDInstruction* instr,
     return ZydisMnemonicGetString((ZydisMnemonic)instr->id);
 }
 
-static const char* x86_processor_get_reg(int reg, RDProcessor* p) {
+static const char* x86_processor_get_register_name(RDReg reg, RDProcessor* p) {
     RD_UNUSED(p);
     return ZydisRegisterGetString((ZydisRegister)reg);
+}
+
+static RDReg x86_processor_get_register_id(const char* name, RDProcessor* p) {
+    RD_UNUSED(p);
+
+    for(ZydisRegister r = ZYDIS_REGISTER_NONE + 1; r < ZYDIS_REGISTER_MAX_VALUE;
+        r++) {
+        const char* rname = ZydisRegisterGetString(r);
+        if(rname && !strcmp(rname, name)) return (RDReg)r;
+    }
+
+    return RD_REGID_UNKNOWN;
 }
 
 static const char** x86_processor_get_prologues(RDProcessor* p,
@@ -469,7 +403,8 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
     plugin->create = x86_processor_create;
     plugin->destroy = x86_processor_destroy;
     plugin->get_mnemonic = x86_processor_get_mnemonic;
-    plugin->get_register = x86_processor_get_reg;
+    plugin->get_register_name = x86_processor_get_register_name;
+    plugin->get_register_id = x86_processor_get_register_id;
     plugin->get_prologues = x86_processor_get_prologues;
 
     // plugin->get_callingconventions = [](const RDProcessor* self) {
