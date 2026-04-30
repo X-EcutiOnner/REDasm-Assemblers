@@ -38,7 +38,7 @@ static const RDReg X86_GPRS[] = {
 };
 // clang-format on
 
-static bool _x86_is_segment_reg(const RDOperand* op) {
+bool x86_is_segment_reg(const RDOperand* op) {
     if(op->kind != RD_OP_REG) return false;
 
     switch(op->reg) {
@@ -75,18 +75,6 @@ void x86_snapshot_regs(RDContext* ctx, const RDInstruction* instr,
     }
 }
 
-bool x86_track_segment_reg(RDContext* ctx, const RDInstruction* instr) {
-    // if(instr->id == ZYDIS_MNEMONIC_POP &&
-    //    _x86_is_segment_reg(&instr->operands[0]))
-    //     return x86_track_pop_reg(ctx, instr);
-    //
-    // if(instr->id == ZYDIS_MNEMONIC_MOV &&
-    //    _x86_is_segment_reg(&instr->operands[0]))
-    //     return x86_track_mov(ctx, instr);
-
-    return false;
-}
-
 void x86_track_mov(RDContext* ctx, const RDInstruction* instr) {
     if(instr->operands[0].kind != RD_OP_REG) return;
 
@@ -110,7 +98,7 @@ void x86_track_mov(RDContext* ctx, const RDInstruction* instr) {
         }
 
         default: { // memory source: invalidate if 'dst' is a segment reg
-            if(_x86_is_segment_reg(dst))
+            if(x86_is_segment_reg(dst))
                 rd_auto_regval(ctx, next, dst->reg, RD_REGVAL_UNKNOWN);
 
             break;
@@ -118,40 +106,13 @@ void x86_track_mov(RDContext* ctx, const RDInstruction* instr) {
     }
 }
 
-bool x86_track_pop_reg(RDContext* ctx, const RDInstruction* instr) {
-    //     RDInstruction previnstr;
-    //     bool ok = rd_decode_prev(instr->address, &previnstr);
-    //     RDRegValue val = RDRegValue_none();
-    //
-    //     if(ok && previnstr.id == ZYDIS_MNEMONIC_PUSH &&
-    //        previnstr.operands[0].type == OP_REG) {
-    //         val = get_reg_val(e, previnstr.operands[0].reg);
-    //     }
-    //     else
-    //         val = get_reg_val(e, instr->operands[0].reg);
-    //
-    //     if(val.ok) {
-    //         rd_setsreg(instr->address + instr->length,
-    //         instr->operands[0].reg,
-    //                    val.value);
-    //     }
-    //
-    //     return val.ok;
-    return false;
-}
+bool x86_track_pop(RDContext* ctx, const RDInstruction* instr) {
+    // TODO: davide - stack tracking needed to resolve POP sreg values
+    // statically. For now, always invalidate, correct but conservative.
+    const RDOperand* dst = &instr->operands[0];
+    if(dst->kind != RD_OP_REG) return false;
 
-// static RDRegValue x86_get_reg_val(RDEmulator* e, int reg) {
-//     if(reg == ZYDIS_REGISTER_CS) {
-//         const RDSegment* seg = rdemulator_getsegment(e);
-//         if(seg) return RDRegValue_some(seg->start);
-//     }
-//
-//     auto val = rdemulator_getreg(e, reg);
-//
-//     if(!val.ok && reg == ZYDIS_REGISTER_DS) {
-//         const RDSegment* seg = rdemulator_getsegment(e);
-//         if(seg) return RDRegValue_some(seg->start);
-//     }
-//
-//     return val;
-// }
+    RDAddress next = x86_get_ip_value(instr);
+    rd_auto_regval(ctx, next, dst->reg, RD_REGVAL_UNKNOWN);
+    return true;
+}

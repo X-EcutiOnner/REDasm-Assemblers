@@ -74,6 +74,54 @@ static void _x86_try_set_type(RDContext* ctx, const RDOperand* op,
     rd_auto_type(ctx, address, t, op->count, RD_TYPE_NONE);
 }
 
+static void _x86_default_emulate(RDContext* ctx, const RDInstruction* instr) {
+    rd_foreach_operand(i, op, instr) {
+        switch(op->kind) {
+            case RD_OP_ADDR: {
+                if(rd_is_jump(instr)) {
+                    x86_snapshot_regs(ctx, instr, op->addr);
+                    rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
+                }
+                else if(rd_is_call(instr)) {
+                    x86_snapshot_regs(ctx, instr, op->addr);
+                    rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
+                }
+                else {
+                    rd_add_xref(ctx, instr->address, op->addr, RD_DR_ADDRESS);
+                }
+
+                break;
+            }
+
+            case RD_OP_MEM: {
+                if(rd_is_jump(instr)) {
+                    X86Address addr = x86_read_address(ctx, op->mem);
+                    if(addr.has_value) {
+                        x86_snapshot_regs(ctx, instr, addr.value);
+                        rd_add_xref(ctx, instr->address, addr.value,
+                                    RD_CR_JUMP);
+                    }
+                }
+                else if(rd_is_call(instr)) {
+                    X86Address addr = x86_read_address(ctx, op->mem);
+                    if(addr.has_value) {
+                        x86_snapshot_regs(ctx, instr, addr.value);
+                        rd_add_xref(ctx, instr->address, addr.value,
+                                    RD_CR_CALL);
+                    }
+                }
+                else
+                    _x86_try_set_type(ctx, op, op->mem);
+
+                rd_add_xref(ctx, instr->address, op->mem, RD_DR_ADDRESS);
+                break;
+            }
+
+            default: break;
+        }
+    }
+}
+
 static void x86_decode(RDContext* ctx, RDInstruction* instr,
                        RDProcessor* proc) {
     X86Processor* self = (X86Processor*)proc;
@@ -280,57 +328,14 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
                         RDProcessor* proc) {
     RD_UNUSED(proc);
 
-    if(instr->id == ZYDIS_MNEMONIC_MOV) x86_track_mov(ctx, instr);
+    bool fallback = true;
 
-    if(!x86_track_segment_reg(ctx, instr)) {
-        rd_foreach_operand(i, op, instr) {
-            switch(op->kind) {
-                case RD_OP_ADDR: {
-                    if(rd_is_jump(instr)) {
-                        x86_snapshot_regs(ctx, instr, op->addr);
-                        rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
-                    }
-                    else if(rd_is_call(instr)) {
-                        x86_snapshot_regs(ctx, instr, op->addr);
-                        rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-                    }
-                    else {
-                        rd_add_xref(ctx, instr->address, op->addr,
-                                    RD_DR_ADDRESS);
-                    }
+    if(instr->id == ZYDIS_MNEMONIC_MOV)
+        x86_track_mov(ctx, instr);
+    else if(instr->id == ZYDIS_MNEMONIC_POP)
+        fallback = !x86_track_pop(ctx, instr);
 
-                    break;
-                }
-
-                case RD_OP_MEM: {
-                    if(rd_is_jump(instr)) {
-                        X86Address addr = x86_read_address(ctx, op->mem);
-                        if(addr.has_value) {
-                            x86_snapshot_regs(ctx, instr, addr.value);
-                            rd_add_xref(ctx, instr->address, addr.value,
-                                        RD_CR_JUMP);
-                        }
-                    }
-                    else if(rd_is_call(instr)) {
-                        X86Address addr = x86_read_address(ctx, op->mem);
-                        if(addr.has_value) {
-                            x86_snapshot_regs(ctx, instr, addr.value);
-                            rd_add_xref(ctx, instr->address, addr.value,
-                                        RD_CR_CALL);
-                        }
-                    }
-                    else
-                        _x86_try_set_type(ctx, op, op->mem);
-
-                    rd_add_xref(ctx, instr->address, op->mem, RD_DR_ADDRESS);
-                    break;
-                }
-
-                default: break;
-            }
-        }
-    }
-
+    if(fallback) _x86_default_emulate(ctx, instr);
     if(rd_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
