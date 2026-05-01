@@ -4,7 +4,6 @@
 #include <Zydis/Zydis.h>
 #include <redasm/redasm.h>
 #include <stdlib.h>
-#include <string.h>
 
 // clang-format off
 static const char* x86_16_prologues[] = {
@@ -44,6 +43,12 @@ typedef struct X86Processor {
 static bool _x86_is_addr_operand(const RDContext* ctx,
                                  const RDInstruction* instr,
                                  const ZydisDecodedOperand* zop) {
+    // 16-bit mode: never promote immediates to addresses.
+    // Both real-mode and protected-mode 16-bit have the same problem:
+    // - real-mode: segment:offset, base at 0, everything is ambiguous
+    // - protected-mode: selectors are not addresses at all
+    if(rd_get_processor_plugin(ctx)->ptr_size == sizeof(u16)) return false;
+
     if(zop->type != ZYDIS_OPERAND_TYPE_IMMEDIATE) return false;
     if(!rd_is_address(ctx, zop->imm.value.u)) return false;
 
@@ -269,10 +274,7 @@ static void x86_render_operand(RDRenderer* r, const RDInstruction* instr,
 
     switch(op->kind) {
         case RD_OP_ADDR: rd_renderer_loc(r, op->addr, 0, 0); break;
-
-        case RD_OP_IMM:
-            rd_renderer_cnst(r, op->imm, 16, 0, RD_NUM_DEFAULT);
-            break;
+        case RD_OP_IMM: rd_renderer_loc(r, op->imm, 0, RD_NUM_DEFAULT); break;
 
         case RD_OP_MEM: {
             rd_renderer_norm(r, "[");
@@ -309,7 +311,7 @@ static void x86_render_operand(RDRenderer* r, const RDInstruction* instr,
 
                 if(op->displ.scale > 1) {
                     rd_renderer_norm(r, "*");
-                    rd_renderer_cnst(r, op->displ.scale, 16, 0, RD_NUM_DEFAULT);
+                    rd_renderer_num(r, op->displ.scale, 16, 0, RD_NUM_DEFAULT);
                 }
             }
 
@@ -339,7 +341,7 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
     if(rd_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
-static RDProcessor* x86_processor_create(const RDProcessorPlugin* plugin) {
+static RDProcessor* x86_create(const RDProcessorPlugin* plugin) {
     X86UserData* ud = (X86UserData*)plugin->userdata;
     X86Processor* self = calloc(1, sizeof(X86Processor));
 
@@ -354,33 +356,20 @@ static RDProcessor* x86_processor_create(const RDProcessorPlugin* plugin) {
     return (RDProcessor*)self;
 }
 
-static void x86_processor_destroy(RDProcessor* p) { free(p); }
+static void x86_destroy(RDProcessor* p) { free(p); }
 
-static const char* x86_processor_get_mnemonic(const RDInstruction* instr,
-                                              RDProcessor* p) {
+static const char* x86_get_mnemonic(const RDInstruction* instr,
+                                    RDProcessor* p) {
     RD_UNUSED(p);
     return ZydisMnemonicGetString((ZydisMnemonic)instr->id);
 }
 
-static const char* x86_processor_get_register_name(RDReg reg, RDProcessor* p) {
+static const char* x86_get_reg_name(RDReg reg, RDProcessor* p) {
     RD_UNUSED(p);
     return ZydisRegisterGetString((ZydisRegister)reg);
 }
 
-static RDReg x86_processor_get_register_id(const char* name, RDProcessor* p) {
-    RD_UNUSED(p);
-
-    for(ZydisRegister r = ZYDIS_REGISTER_NONE + 1; r < ZYDIS_REGISTER_MAX_VALUE;
-        r++) {
-        const char* rname = ZydisRegisterGetString(r);
-        if(rname && !strcmp(rname, name)) return (RDReg)r;
-    }
-
-    return RD_REGID_UNKNOWN;
-}
-
-static const char** x86_processor_get_prologues(RDProcessor* p,
-                                                const RDContext* ctx) {
+static const char** x86_get_prologues(RDProcessor* p, const RDContext* ctx) {
     RD_UNUSED(ctx);
     X86Processor* self = (X86Processor*)p;
     return self->prologues;
@@ -405,12 +394,12 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
     plugin->lift = x86_lift;
     plugin->render_mnemonic = x86_render_mnemonic;
     plugin->render_operand = x86_render_operand;
-    plugin->create = x86_processor_create;
-    plugin->destroy = x86_processor_destroy;
-    plugin->get_mnemonic = x86_processor_get_mnemonic;
-    plugin->get_register_name = x86_processor_get_register_name;
-    plugin->get_register_id = x86_processor_get_register_id;
-    plugin->get_prologues = x86_processor_get_prologues;
+    plugin->create = x86_create;
+    plugin->destroy = x86_destroy;
+    plugin->get_mnemonic = x86_get_mnemonic;
+    plugin->get_reg_name = x86_get_reg_name;
+    plugin->get_reg_mask = x86_get_reg_mask;
+    plugin->get_prologues = x86_get_prologues;
 
     // plugin->get_callingconventions = [](const RDProcessor* self) {
     //     return reinterpret_cast<const

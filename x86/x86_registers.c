@@ -1,5 +1,6 @@
 #include "x86_registers.h"
 #include <Zydis/Zydis.h>
+#include <string.h>
 
 // clang-format off
 static const RDReg X86_SREGS[] = {
@@ -12,22 +13,6 @@ static const RDReg X86_SREGS[] = {
 };
 
 static const RDReg X86_GPRS[] = {
-    // 8-bit
-    ZYDIS_REGISTER_AL,  ZYDIS_REGISTER_AH,
-    ZYDIS_REGISTER_BL,  ZYDIS_REGISTER_BH,
-    ZYDIS_REGISTER_CL,  ZYDIS_REGISTER_CH,
-    ZYDIS_REGISTER_DL,  ZYDIS_REGISTER_DH,
-    // 16-bit
-    ZYDIS_REGISTER_AX,  ZYDIS_REGISTER_BX,
-    ZYDIS_REGISTER_CX,  ZYDIS_REGISTER_DX,
-    ZYDIS_REGISTER_SI,  ZYDIS_REGISTER_DI,
-    ZYDIS_REGISTER_BP,  ZYDIS_REGISTER_SP,
-    // 32-bit
-    ZYDIS_REGISTER_EAX, ZYDIS_REGISTER_EBX,
-    ZYDIS_REGISTER_ECX, ZYDIS_REGISTER_EDX,
-    ZYDIS_REGISTER_ESI, ZYDIS_REGISTER_EDI,
-    ZYDIS_REGISTER_EBP, ZYDIS_REGISTER_ESP,
-    // 64-bit
     ZYDIS_REGISTER_RAX, ZYDIS_REGISTER_RBX,
     ZYDIS_REGISTER_RCX, ZYDIS_REGISTER_RDX,
     ZYDIS_REGISTER_RSI, ZYDIS_REGISTER_RDI,
@@ -37,6 +22,56 @@ static const RDReg X86_GPRS[] = {
     ZYDIS_REGISTER_R14, ZYDIS_REGISTER_R15,
 };
 // clang-format on
+
+static RDReg _x86_get_register_id(const char* name) {
+    for(ZydisRegister r = ZYDIS_REGISTER_NONE + 1; r < ZYDIS_REGISTER_MAX_VALUE;
+        r++) {
+        const char* rname = ZydisRegisterGetString(r);
+        if(rname && !strcmp(rname, name)) return (RDReg)r;
+    }
+
+    return RD_REGID_UNKNOWN;
+}
+
+static RDReg _x86_canonical_reg(RDReg r) {
+    switch(r) {
+        case ZYDIS_REGISTER_AL:
+        case ZYDIS_REGISTER_AH:
+        case ZYDIS_REGISTER_AX:
+        case ZYDIS_REGISTER_EAX: return ZYDIS_REGISTER_RAX;
+
+        case ZYDIS_REGISTER_BL:
+        case ZYDIS_REGISTER_BH:
+        case ZYDIS_REGISTER_BX:
+        case ZYDIS_REGISTER_EBX: return ZYDIS_REGISTER_RBX;
+
+        case ZYDIS_REGISTER_CL:
+        case ZYDIS_REGISTER_CH:
+        case ZYDIS_REGISTER_CX:
+        case ZYDIS_REGISTER_ECX: return ZYDIS_REGISTER_RCX;
+
+        case ZYDIS_REGISTER_DL:
+        case ZYDIS_REGISTER_DH:
+        case ZYDIS_REGISTER_DX:
+        case ZYDIS_REGISTER_EDX: return ZYDIS_REGISTER_RDX;
+
+        case ZYDIS_REGISTER_SI:
+        case ZYDIS_REGISTER_ESI: return ZYDIS_REGISTER_RSI;
+
+        case ZYDIS_REGISTER_DI:
+        case ZYDIS_REGISTER_EDI: return ZYDIS_REGISTER_RDI;
+
+        case ZYDIS_REGISTER_BP:
+        case ZYDIS_REGISTER_EBP: return ZYDIS_REGISTER_RBP;
+
+        case ZYDIS_REGISTER_SP:
+        case ZYDIS_REGISTER_ESP: return ZYDIS_REGISTER_RSP;
+
+        default: break;
+    }
+
+    return r;
+}
 
 bool x86_is_segment_reg(const RDOperand* op) {
     if(op->kind != RD_OP_REG) return false;
@@ -61,17 +96,16 @@ RDAddress x86_get_ip_value(const RDInstruction* instr) {
 
 void x86_snapshot_regs(RDContext* ctx, const RDInstruction* instr,
                        RDAddress target) {
-
     for(int i = 0; i < rd_count_of(X86_SREGS); i++) {
         u64 val;
-        if(rd_get_regval(ctx, instr->address, X86_SREGS[i], &val))
-            rd_auto_regval(ctx, target, X86_SREGS[i], val);
+        if(rd_get_regval_id(ctx, instr->address, X86_SREGS[i], &val))
+            rd_auto_regval_id(ctx, target, X86_SREGS[i], val);
     }
 
     for(int i = 0; i < rd_count_of(X86_GPRS); i++) {
         u64 val;
-        if(rd_get_regval(ctx, instr->address, X86_GPRS[i], &val))
-            rd_auto_regval(ctx, target, X86_GPRS[i], val);
+        if(rd_get_regval_id(ctx, instr->address, X86_GPRS[i], &val))
+            rd_auto_regval_id(ctx, target, X86_GPRS[i], val);
     }
 }
 
@@ -83,23 +117,25 @@ void x86_track_mov(RDContext* ctx, const RDInstruction* instr) {
     RDAddress next = x86_get_ip_value(instr);
 
     switch(src->kind) {
-        case RD_OP_IMM: rd_auto_regval(ctx, next, dst->reg, src->imm); break;
-        case RD_OP_ADDR: rd_auto_regval(ctx, next, dst->reg, src->addr); break;
+        case RD_OP_IMM: rd_auto_regval_id(ctx, next, dst->reg, src->imm); break;
+        case RD_OP_ADDR:
+            rd_auto_regval_id(ctx, next, dst->reg, src->addr);
+            break;
 
         case RD_OP_REG: {
             u64 v;
 
-            if(rd_get_regval(ctx, instr->address, src->reg, &v))
-                rd_auto_regval(ctx, next, dst->reg, v);
+            if(rd_get_regval_id(ctx, instr->address, src->reg, &v))
+                rd_auto_regval_id(ctx, next, dst->reg, v);
             else
-                rd_auto_regval(ctx, next, dst->reg, RD_REGVAL_UNKNOWN);
+                rd_del_auto_regval_id(ctx, next, dst->reg);
 
             break;
         }
 
         default: { // memory source: invalidate if 'dst' is a segment reg
             if(x86_is_segment_reg(dst))
-                rd_auto_regval(ctx, next, dst->reg, RD_REGVAL_UNKNOWN);
+                rd_del_auto_regval_id(ctx, next, dst->reg);
 
             break;
         }
@@ -113,6 +149,53 @@ bool x86_track_pop(RDContext* ctx, const RDInstruction* instr) {
     if(dst->kind != RD_OP_REG) return false;
 
     RDAddress next = x86_get_ip_value(instr);
-    rd_auto_regval(ctx, next, dst->reg, RD_REGVAL_UNKNOWN);
+    rd_del_auto_regval_id(ctx, next, dst->reg);
+    return true;
+}
+
+bool x86_get_reg_mask(const char* name, RDRegMask* m, RDProcessor* p) {
+    // register I/O is relative to 64 bit registers
+    RD_UNUSED(p);
+
+    RDReg reg_id = _x86_get_register_id(name);
+    if(reg_id == RD_REGID_UNKNOWN) return false;
+
+    m->reg = _x86_canonical_reg(reg_id);
+
+    switch(reg_id) {
+        case ZYDIS_REGISTER_AL:
+        case ZYDIS_REGISTER_BL:
+        case ZYDIS_REGISTER_CL:
+        case ZYDIS_REGISTER_DL: m->mask = 0xFF; break;
+
+        case ZYDIS_REGISTER_AH:
+        case ZYDIS_REGISTER_BH:
+        case ZYDIS_REGISTER_CH:
+        case ZYDIS_REGISTER_DH:
+            m->mask = 0xFF00;
+            m->shift = 8;
+            break;
+
+        case ZYDIS_REGISTER_AX:
+        case ZYDIS_REGISTER_BX:
+        case ZYDIS_REGISTER_CX:
+        case ZYDIS_REGISTER_DX:
+        case ZYDIS_REGISTER_SI:
+        case ZYDIS_REGISTER_DI:
+        case ZYDIS_REGISTER_BP:
+        case ZYDIS_REGISTER_SP: m->mask = 0xFFFF; break;
+
+        case ZYDIS_REGISTER_EAX:
+        case ZYDIS_REGISTER_EBX:
+        case ZYDIS_REGISTER_ECX:
+        case ZYDIS_REGISTER_EDX:
+        case ZYDIS_REGISTER_ESI:
+        case ZYDIS_REGISTER_EDI:
+        case ZYDIS_REGISTER_EBP:
+        case ZYDIS_REGISTER_ESP: m->mask = 0xFFFFFFFF; break;
+
+        default: m->mask = RD_REGMASK_FULL; break;
+    }
+
     return true;
 }
