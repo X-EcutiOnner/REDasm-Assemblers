@@ -224,6 +224,11 @@ bool capstone_arm32_decode_flow(const cs_insn* cs_insn, RDInstruction* instr) {
             return true;
         }
 
+        case ARM_INS_LDR: {
+            if(d->operands[0].reg == ARM_REG_PC) instr->flow = RD_IF_STOP;
+            break;
+        }
+
         default: break;
     }
 
