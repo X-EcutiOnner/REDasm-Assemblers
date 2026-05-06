@@ -38,6 +38,8 @@ static RDProcessor* _arm32_create(const RDProcessorPlugin* p) {
 }
 
 static void _arm32_destroy(RDProcessor* p) {
+    if(!p) return;
+
     ARM32Capstone* self = (ARM32Capstone*)p;
     capstone_destroy((Capstone*)self->thumb);
     capstone_destroy((Capstone*)self);
