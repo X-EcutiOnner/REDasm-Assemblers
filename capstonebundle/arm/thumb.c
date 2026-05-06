@@ -10,7 +10,7 @@ const CapstoneInitData THUMB_BE_INIT = {
     .mode = CS_MODE_THUMB | CS_MODE_BIG_ENDIAN,
 };
 
-RDAddress _thumb_get_pc(RDAddress address) {
+static RDAddress _thumb_get_pc(RDAddress address) {
     return (address & ~3) + sizeof(u32);
 }
 
