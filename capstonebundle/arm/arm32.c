@@ -4,8 +4,8 @@
 #include "capstone.h"
 
 typedef struct ARM32Capstone {
-    Capstone base;
-    Capstone* thumb;
+    ARMCapstone base;
+    ARMCapstone* thumb;
 } ARM32Capstone;
 
 static const CapstoneInitData ARM32_LE_INIT = {
@@ -18,8 +18,8 @@ static const CapstoneInitData ARM32_BE_INIT = {
     .mode = CS_MODE_ARM | CS_MODE_BIG_ENDIAN,
 };
 
-static RDAddress _arm32_get_pc(const RDInstruction* instr) {
-    return instr->address + (sizeof(u32) * 2); // ARM PC = address + 8
+static RDAddress _arm32_get_pc(RDAddress address) {
+    return address + (sizeof(u32) * 2);
 }
 
 static RDProcessor* _arm32_create(const RDProcessorPlugin* p) {
@@ -27,18 +27,19 @@ static RDProcessor* _arm32_create(const RDProcessorPlugin* p) {
 
     ARM32Capstone* self =
         (ARM32Capstone*)capstone_create(data, sizeof(ARM32Capstone));
+    self->base.get_pc = _arm32_get_pc;
 
     if(data == &ARM32_LE_INIT)
-        self->thumb = capstone_create(&THUMB_LE_INIT, sizeof(Capstone));
+        self->thumb = capstone_thumb_create(&THUMB_LE_INIT);
     else
-        self->thumb = capstone_create(&THUMB_BE_INIT, sizeof(Capstone));
+        self->thumb = capstone_thumb_create(&THUMB_BE_INIT);
 
     return (RDProcessor*)self;
 }
 
 static void _arm32_destroy(RDProcessor* p) {
     ARM32Capstone* self = (ARM32Capstone*)p;
-    capstone_destroy(self->thumb);
+    capstone_destroy((Capstone*)self->thumb);
     capstone_destroy((Capstone*)self);
 }
 
@@ -97,7 +98,7 @@ void capstone_arm32_decode(RDContext* ctx, RDInstruction* instr,
                     i32 disp = cop->subtracted ? -(i32)cop->mem.disp
                                                : (i32)cop->mem.disp;
 
-                    op->mem = _arm32_get_pc(instr) + disp;
+                    op->mem = _arm32_get_pc(instr->address) + disp;
                 }
                 else if(cop->mem.index == ARM_REG_INVALID) {
                     op->kind = RD_OP_DISPL;
@@ -146,7 +147,10 @@ static void _arm32_emulate(RDContext* ctx, const RDInstruction* instr,
             rd_auto_regval(ctx, op->addr, "T", !is_thumb);
     }
 
-    capstone_plugin_arm32_emulate(ctx, instr, (RDProcessor*)self);
+    if(is_thumb)
+        capstone_plugin_arm32_emulate(ctx, instr, (RDProcessor*)self->thumb);
+    else
+        capstone_plugin_arm32_emulate(ctx, instr, (RDProcessor*)self);
 }
 
 const RDProcessorPlugin ARM32_LE = {

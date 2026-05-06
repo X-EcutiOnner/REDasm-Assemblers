@@ -1,5 +1,4 @@
 #include "thumb.h"
-#include "arm/common.h"
 
 const CapstoneInitData THUMB_LE_INIT = {
     .arch = CS_ARCH_ARM,
@@ -11,8 +10,20 @@ const CapstoneInitData THUMB_BE_INIT = {
     .mode = CS_MODE_THUMB | CS_MODE_BIG_ENDIAN,
 };
 
-static RDAddress _thumb_get_pc(const RDInstruction* instr) {
-    return (instr->address & ~3) + sizeof(u32);
+RDAddress _thumb_get_pc(RDAddress address) {
+    return (address & ~3) + sizeof(u32);
+}
+
+static RDProcessor* _thumb_create(const RDProcessorPlugin* p) {
+    const CapstoneInitData* data = (const CapstoneInitData*)p->userdata;
+    return (RDProcessor*)capstone_thumb_create(data);
+}
+
+ARMCapstone* capstone_thumb_create(const CapstoneInitData* data) {
+    ARMCapstone* self =
+        (ARMCapstone*)capstone_create(data, sizeof(ARMCapstone));
+    self->get_pc = _thumb_get_pc;
+    return self;
 }
 
 void capstone_thumb_decode(RDContext* ctx, RDInstruction* instr,
@@ -62,7 +73,7 @@ void capstone_thumb_decode(RDContext* ctx, RDInstruction* instr,
                                                        : (i32)cop->mem.disp;
 
                     op->kind = RD_OP_MEM;
-                    op->mem = _thumb_get_pc(instr) + displ;
+                    op->mem = _thumb_get_pc(instr->address) + displ;
                 }
                 else if(cop->mem.base == ARM_REG_INVALID &&
                         cop->mem.index == ARM_REG_INVALID) {
@@ -99,7 +110,7 @@ const RDProcessorPlugin THUMB_LE = {
     .ptr_size = sizeof(u32),
     .int_size = sizeof(u32),
     .userdata = (void*)&THUMB_LE_INIT,
-    .create = capstone_plugin_create,
+    .create = _thumb_create,
     .destroy = capstone_plugin_destroy,
     .decode = capstone_thumb_decode,
     .emulate = capstone_plugin_arm32_emulate,
@@ -116,7 +127,7 @@ const RDProcessorPlugin THUMB_BE = {
     .ptr_size = sizeof(u32),
     .int_size = sizeof(u32),
     .userdata = (void*)&THUMB_BE_INIT,
-    .create = capstone_plugin_create,
+    .create = _thumb_create,
     .destroy = capstone_plugin_destroy,
     .decode = capstone_thumb_decode,
     .emulate = capstone_plugin_arm32_emulate,

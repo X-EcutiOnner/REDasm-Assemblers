@@ -3,6 +3,13 @@
 #include <capstone.h>
 #include <redasm/redasm.h>
 
+typedef RDAddress (*CapstoneArmGetPc)(RDAddress);
+
+typedef struct ARMCapstone {
+    Capstone base;
+    CapstoneArmGetPc get_pc;
+} ARMCapstone;
+
 void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
                                    RDProcessor* p);
 

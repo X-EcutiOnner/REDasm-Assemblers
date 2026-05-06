@@ -46,9 +46,92 @@ static arm_reg _capstone_arm32_index_to_reg(int idx) {
     }
 }
 
+static bool _capstone_arm32_get_regval(RDContext* ctx, RDAddress address,
+                                       arm_reg reg, RDRegValue* val,
+                                       RDProcessor* p) {
+    if(reg == ARM_REG_SP) return false;
+
+    if(reg == ARM_REG_PC) {
+        ARMCapstone* capstone = (ARMCapstone*)p;
+        *val = capstone->get_pc(address);
+        return true;
+    }
+
+    return rd_get_regval_id(ctx, address, reg, val);
+}
+
+static void _capstone_arm32_set_regval(RDContext* ctx, RDAddress address,
+                                       arm_reg reg, RDRegValue val) {
+    if(reg == ARM_REG_SP || reg == ARM_REG_PC) return;
+    rd_auto_regval_id(ctx, address, reg, val);
+}
+
 void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
                                    RDProcessor* p) {
-    RD_UNUSED(p);
+    const RDProcessorPlugin* plugin = rd_get_processor_plugin(ctx);
+    bool is_be = plugin->flags & RD_PF_BE;
+    RDAddress next = instr->address + instr->length;
+
+    switch(instr->id) {
+        case ARM_INS_MOV: {
+            const RDOperand* dst = &instr->operands[0];
+            const RDOperand* src = &instr->operands[1];
+
+            if(dst->kind == RD_OP_REG && src->kind == RD_OP_IMM) {
+                _capstone_arm32_set_regval(ctx, next, dst->reg,
+                                           (u32)src->s_imm);
+            }
+            else if(dst->kind == RD_OP_REG && src->kind == RD_OP_REG) {
+                RDRegValue val;
+                if(_capstone_arm32_get_regval(ctx, instr->address, src->reg,
+                                              &val, p))
+                    _capstone_arm32_set_regval(ctx, next, dst->reg, val);
+                else
+                    rd_del_auto_regval_id(ctx, next, dst->reg);
+            }
+
+            break;
+        }
+
+        case ARM_INS_MOVW: {
+            _capstone_arm32_set_regval(ctx, next, instr->operands[0].reg,
+                                       (u32)instr->operands[1].s_imm & 0xFFFF);
+            break;
+        }
+
+        case ARM_INS_MOVT: {
+            RDRegValue lo;
+            if(_capstone_arm32_get_regval(ctx, instr->address,
+                                          instr->operands[0].reg, &lo, p)) {
+                u32 result =
+                    ((u32)instr->operands[1].s_imm << 16) | (lo & 0xFFFF);
+                _capstone_arm32_set_regval(ctx, next, instr->operands[0].reg,
+                                           result);
+                if(rd_is_address(ctx, result))
+                    rd_add_xref(ctx, instr->address, result, RD_DR_ADDRESS);
+            }
+
+            break;
+        }
+
+        case ARM_INS_LDR: {
+            const RDOperand* dst = &instr->operands[0];
+            const RDOperand* src = &instr->operands[1];
+
+            if(dst->kind == RD_OP_REG && src->kind == RD_OP_MEM) {
+                u32 val;
+
+                bool ok = is_be ? rd_read_be32(ctx, src->mem, &val)
+                                : rd_read_le32(ctx, src->mem, &val);
+
+                if(ok) _capstone_arm32_set_regval(ctx, next, dst->reg, val);
+            }
+
+            break;
+        }
+
+        default: break;
+    }
 
     rd_foreach_operand(i, op, instr) {
         if(op->kind == RD_OP_ADDR) {
@@ -183,8 +266,7 @@ bool capstone_arm32_decode_flow(const cs_insn* cs_insn, RDInstruction* instr) {
         case ARM_INS_STMDB:
         case ARM_INS_STMIB: {
             if(cs_insn->is_alias) {
-                if(capstone_arm32_decode_regmask(cs_insn, instr, 0))
-                    instr->flow = RD_IF_STOP;
+                capstone_arm32_decode_regmask(cs_insn, instr, 0);
             }
             else {
                 instr->operands[0].kind = RD_OP_REG;
@@ -225,7 +307,7 @@ bool capstone_arm32_decode_flow(const cs_insn* cs_insn, RDInstruction* instr) {
         }
 
         case ARM_INS_LDR: {
-            if(d->operands[0].reg == ARM_REG_PC) instr->flow = RD_IF_STOP;
+            if(d->operands[0].reg == ARM_REG_PC) instr->flow = RD_IF_JUMP;
             break;
         }
 
