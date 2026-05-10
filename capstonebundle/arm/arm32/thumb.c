@@ -1,4 +1,5 @@
 #include "thumb.h"
+#include "arm/arm32/lifter.h"
 
 const CapstoneInitData THUMB_LE_INIT = {
     .arch = CS_ARCH_ARM,
@@ -51,7 +52,7 @@ void capstone_thumb_decode(RDContext* ctx, RDInstruction* instr,
                 break;
 
             case ARM_OP_IMM: {
-                if(rd_is_branch(instr)) {
+                if(rd_instr_is_branch(instr)) {
                     op->kind = RD_OP_ADDR;
                     op->addr = (RDAddress)(cop->imm & ~1); // strip LSB
                 }
@@ -80,18 +81,15 @@ void capstone_thumb_decode(RDContext* ctx, RDInstruction* instr,
                     op->kind = RD_OP_MEM;
                     op->mem = (RDAddress)cop->mem.disp;
                 }
-                else if(cop->mem.index == ARM_REG_INVALID) {
+                else {
                     op->kind = RD_OP_DISPL;
                     op->displ.base = cop->mem.base;
-                    op->displ.index = RD_REGID_UNKNOWN;
+                    op->displ.index = cop->mem.index == ARM_REG_INVALID
+                                          ? RD_REGID_UNKNOWN
+                                          : cop->mem.index;
                     op->displ.offset = cop->subtracted ? -(i32)cop->mem.disp
                                                        : (i32)cop->mem.disp;
                     op->userdata1 = d->post_index;
-                }
-                else {
-                    op->kind = RD_OP_PHRASE;
-                    op->phrase.base = cop->mem.base;
-                    op->phrase.index = cop->mem.index;
                 }
 
                 break;
@@ -114,6 +112,7 @@ const RDProcessorPlugin THUMB_LE = {
     .destroy = capstone_plugin_destroy,
     .decode = capstone_thumb_decode,
     .emulate = capstone_plugin_arm32_emulate,
+    .lift = capstone_arm32_lift,
     .render_operand = capstone_plugin_arm32_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
     .get_reg_name = capstone_plugin_get_reg_name,
@@ -131,6 +130,7 @@ const RDProcessorPlugin THUMB_BE = {
     .destroy = capstone_plugin_destroy,
     .decode = capstone_thumb_decode,
     .emulate = capstone_plugin_arm32_emulate,
+    .lift = capstone_arm32_lift,
     .render_operand = capstone_plugin_arm32_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
     .get_reg_name = capstone_plugin_get_reg_name,

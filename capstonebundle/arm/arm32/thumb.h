@@ -1,6 +1,6 @@
 #pragma once
 
-#include "arm/common.h"
+#include "arm/arm32/common.h"
 #include <redasm/redasm.h>
 
 extern const CapstoneInitData THUMB_LE_INIT;

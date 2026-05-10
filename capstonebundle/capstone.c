@@ -51,7 +51,7 @@ const cs_insn* capstone_plugin_decode(RDInstruction* instr, const char* code,
 
     instr->id = self->insn->id;
     instr->length = self->insn->size;
-    rd_instruction_set_mnemonic(instr, self->insn->mnemonic);
+    rd_instr_set_mnemonic(instr, self->insn->mnemonic);
     return self->insn;
 }
 

@@ -1,6 +1,7 @@
 #include "arm32.h"
-#include "arm/common.h"
-#include "arm/thumb.h"
+#include "arm/arm32/common.h"
+#include "arm/arm32/lifter.h"
+#include "arm/arm32/thumb.h"
 #include "capstone.h"
 
 typedef struct ARM32Capstone {
@@ -82,7 +83,7 @@ void capstone_arm32_decode(RDContext* ctx, RDInstruction* instr,
                 break;
 
             case ARM_OP_IMM:
-                if(rd_is_branch(instr)) {
+                if(rd_instr_is_branch(instr)) {
                     op->kind = RD_OP_ADDR;
                     op->addr = (RDAddress)(cop->imm & ~1);
                 }
@@ -102,19 +103,17 @@ void capstone_arm32_decode(RDContext* ctx, RDInstruction* instr,
 
                     op->mem = _arm32_get_pc(instr->address) + disp;
                 }
-                else if(cop->mem.index == ARM_REG_INVALID) {
+                else {
                     op->kind = RD_OP_DISPL;
                     op->displ.base = cop->mem.base;
-                    op->displ.index = RD_REGID_UNKNOWN;
+                    op->displ.index = cop->mem.index == ARM_REG_INVALID
+                                          ? RD_REGID_UNKNOWN
+                                          : cop->mem.index;
                     op->displ.offset = cop->subtracted ? -(i32)cop->mem.disp
                                                        : (i32)cop->mem.disp;
                     op->userdata1 = d->post_index;
                 }
-                else {
-                    op->kind = RD_OP_PHRASE;
-                    op->phrase.base = cop->mem.base;
-                    op->phrase.index = cop->mem.index;
-                }
+
                 break;
 
             default: break;
@@ -126,8 +125,8 @@ static void _arm32_decode(RDContext* ctx, RDInstruction* instr,
                           RDProcessor* p) {
     ARM32Capstone* self = (ARM32Capstone*)p;
 
-    u64 t;
-    bool is_thumb = rd_get_regval(ctx, instr->address, "T", &t) && t != 0;
+    RDRegValue t;
+    bool is_thumb = rd_get_sregval(ctx, instr->address, "T", &t) && t != 0;
 
     if(is_thumb)
         capstone_thumb_decode(ctx, instr, (RDProcessor*)self->thumb);
@@ -139,14 +138,14 @@ static void _arm32_emulate(RDContext* ctx, const RDInstruction* instr,
                            RDProcessor* p) {
     ARM32Capstone* self = (ARM32Capstone*)p;
 
-    u64 t;
-    bool is_thumb = rd_get_regval(ctx, instr->address, "T", &t) && t != 0;
+    RDRegValue t;
+    bool is_thumb = rd_get_sregval(ctx, instr->address, "T", &t) && t != 0;
 
     if(instr->id == ARM_INS_BLX) {
         const RDOperand* op = &instr->operands[0];
 
         if(op->kind == RD_OP_ADDR)
-            rd_auto_regval(ctx, op->addr, "T", !is_thumb);
+            rd_auto_sregval(ctx, op->addr, "T", !is_thumb);
     }
 
     if(is_thumb)
@@ -167,6 +166,7 @@ const RDProcessorPlugin ARM32_LE = {
     .destroy = _arm32_destroy,
     .decode = _arm32_decode,
     .emulate = _arm32_emulate,
+    .lift = capstone_arm32_lift,
     .render_operand = capstone_plugin_arm32_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
     .get_reg_name = capstone_plugin_get_reg_name,
@@ -184,6 +184,7 @@ const RDProcessorPlugin ARM32_BE = {
     .destroy = _arm32_destroy,
     .decode = _arm32_decode,
     .emulate = _arm32_emulate,
+    .lift = capstone_arm32_lift,
     .render_operand = capstone_plugin_arm32_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
     .get_reg_name = capstone_plugin_get_reg_name,

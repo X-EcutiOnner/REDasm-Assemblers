@@ -64,7 +64,7 @@ static void _arm64_decode(RDContext* ctx, RDInstruction* instr,
                 break;
 
             case AARCH64_OP_IMM: {
-                if(rd_is_branch(instr)) {
+                if(rd_instr_is_branch(instr)) {
                     instr->operands[i].kind = RD_OP_ADDR;
                     instr->operands[i].addr = (RDAddress)cs_op->imm;
                 }
@@ -82,17 +82,13 @@ static void _arm64_decode(RDContext* ctx, RDInstruction* instr,
                     op->kind = RD_OP_MEM;
                     op->mem = (RDAddress)cs_op->mem.disp;
                 }
-                else if(cs_op->mem.index == AARCH64_REG_INVALID &&
-                        cs_op->mem.base != AARCH64_REG_INVALID) {
+                else {
                     op->kind = RD_OP_DISPL;
                     op->displ.base = cs_op->mem.base;
-                    op->displ.index = RD_REGID_UNKNOWN;
+                    op->displ.index = cs_op->mem.index == AARCH64_REG_INVALID
+                                          ? RD_REGID_UNKNOWN
+                                          : cs_op->mem.index;
                     op->displ.offset = cs_op->mem.disp;
-                }
-                else {
-                    op->kind = RD_OP_PHRASE;
-                    op->phrase.base = cs_op->mem.base;
-                    op->phrase.index = cs_op->mem.index;
                 }
                 break;
             }
@@ -108,9 +104,9 @@ static void _arm64_emulate(RDContext* ctx, const RDInstruction* instr,
 
     rd_foreach_operand(i, op, instr) {
         if(op->kind == RD_OP_ADDR) {
-            if(rd_is_call(instr))
+            if(rd_instr_is_call(instr))
                 rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-            else if(rd_is_jump(instr))
+            else if(rd_instr_is_jump(instr))
                 rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
             else
                 rd_add_xref(ctx, instr->address, op->addr, RD_DR_ADDRESS);
@@ -126,7 +122,7 @@ static void _arm64_emulate(RDContext* ctx, const RDInstruction* instr,
     if(dst->kind == RD_OP_REG && src->kind == RD_OP_MEM)
         rd_auto_type(ctx, src->mem, "u64", 0, RD_TYPE_PTR);
 
-    if(rd_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
+    if(rd_instr_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
 static bool _arm64_render_operand(RDRenderer* r, const RDInstruction* instr,
@@ -143,15 +139,6 @@ static bool _arm64_render_operand(RDRenderer* r, const RDInstruction* instr,
             rd_renderer_num(r, op->displ.offset, 10, 0, RD_NUM_SIGNED);
         }
 
-        rd_renderer_norm(r, "]");
-        return true;
-    }
-
-    if(op->kind == RD_OP_PHRASE) {
-        rd_renderer_norm(r, "[");
-        rd_renderer_reg(r, op->phrase.base);
-        rd_renderer_norm(r, ", ");
-        rd_renderer_reg(r, op->phrase.index);
         rd_renderer_norm(r, "]");
         return true;
     }

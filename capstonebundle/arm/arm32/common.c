@@ -49,7 +49,7 @@ static arm_reg _capstone_arm32_index_to_reg(int idx) {
 static bool _capstone_arm32_get_regval(RDContext* ctx, RDAddress address,
                                        arm_reg reg, RDRegValue* val,
                                        RDProcessor* p) {
-    if(reg == ARM_REG_SP) return false;
+    if(rd_get_regval_id(ctx, reg, val)) return true;
 
     if(reg == ARM_REG_PC) {
         ARMCapstone* capstone = (ARMCapstone*)p;
@@ -57,13 +57,12 @@ static bool _capstone_arm32_get_regval(RDContext* ctx, RDAddress address,
         return true;
     }
 
-    return rd_get_regval_id(ctx, address, reg, val);
+    return false;
 }
 
-static void _capstone_arm32_set_regval(RDContext* ctx, RDAddress address,
-                                       arm_reg reg, RDRegValue val) {
-    if(reg == ARM_REG_SP || reg == ARM_REG_PC) return;
-    rd_auto_regval_id(ctx, address, reg, val);
+static void _capstone_arm32_set_regval(RDContext* ctx, arm_reg reg,
+                                       RDRegValue val) {
+    rd_set_regval_id(ctx, reg, val);
 }
 
 void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
@@ -78,23 +77,22 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
             const RDOperand* src = &instr->operands[1];
 
             if(dst->kind == RD_OP_REG && src->kind == RD_OP_IMM) {
-                _capstone_arm32_set_regval(ctx, next, dst->reg,
-                                           (u32)src->s_imm);
+                _capstone_arm32_set_regval(ctx, dst->reg, (u32)src->s_imm);
             }
             else if(dst->kind == RD_OP_REG && src->kind == RD_OP_REG) {
                 RDRegValue val;
                 if(_capstone_arm32_get_regval(ctx, instr->address, src->reg,
                                               &val, p))
-                    _capstone_arm32_set_regval(ctx, next, dst->reg, val);
+                    _capstone_arm32_set_regval(ctx, dst->reg, val);
                 else
-                    rd_del_auto_regval_id(ctx, next, dst->reg);
+                    rd_del_regval_id(ctx, dst->reg);
             }
 
             break;
         }
 
         case ARM_INS_MOVW: {
-            _capstone_arm32_set_regval(ctx, next, instr->operands[0].reg,
+            _capstone_arm32_set_regval(ctx, instr->operands[0].reg,
                                        (u32)instr->operands[1].s_imm & 0xFFFF);
             break;
         }
@@ -105,8 +103,7 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
                                           instr->operands[0].reg, &lo, p)) {
                 u32 result =
                     ((u32)instr->operands[1].s_imm << 16) | (lo & 0xFFFF);
-                _capstone_arm32_set_regval(ctx, next, instr->operands[0].reg,
-                                           result);
+                _capstone_arm32_set_regval(ctx, instr->operands[0].reg, result);
                 if(rd_is_address(ctx, result))
                     rd_add_xref(ctx, instr->address, result, RD_DR_ADDRESS);
             }
@@ -124,7 +121,7 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
                 bool ok = is_be ? rd_read_be32(ctx, src->mem, &val)
                                 : rd_read_le32(ctx, src->mem, &val);
 
-                if(ok) _capstone_arm32_set_regval(ctx, next, dst->reg, val);
+                if(ok) _capstone_arm32_set_regval(ctx, dst->reg, val);
             }
 
             break;
@@ -135,9 +132,9 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
 
     rd_foreach_operand(i, op, instr) {
         if(op->kind == RD_OP_ADDR) {
-            if(rd_is_call(instr))
+            if(rd_instr_is_call(instr))
                 rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-            else if(rd_is_jump(instr))
+            else if(rd_instr_is_jump(instr))
                 rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
             else
                 rd_add_xref(ctx, instr->address, op->addr, RD_DR_ADDRESS);
@@ -152,7 +149,7 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
         }
     }
 
-    if(rd_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
+    if(rd_instr_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
 bool capstone_plugin_arm32_render_operand(RDRenderer* r,
@@ -181,16 +178,6 @@ bool capstone_plugin_arm32_render_operand(RDRenderer* r,
         else if(instr->write_back)
             rd_renderer_norm(r, "!");
 
-        return true;
-    }
-
-    if(op->kind == RD_OP_PHRASE) {
-        rd_renderer_norm(r, "[");
-        rd_renderer_reg(r, op->phrase.base);
-        rd_renderer_norm(r, ", ");
-        rd_renderer_reg(r, op->phrase.index);
-        rd_renderer_norm(r, "]");
-        if(instr->write_back) rd_renderer_norm(r, "!");
         return true;
     }
 
@@ -307,7 +294,11 @@ bool capstone_arm32_decode_flow(const cs_insn* cs_insn, RDInstruction* instr) {
         }
 
         case ARM_INS_LDR: {
-            if(d->operands[0].reg == ARM_REG_PC) instr->flow = RD_IF_JUMP;
+            if(d->operands[0].reg == ARM_REG_PC) {
+                instr->flow = (d->cc == ARMCC_AL || d->cc == ARMCC_Invalid)
+                                  ? RD_IF_JUMP
+                                  : RD_IF_JUMP_COND;
+            }
             break;
         }
 

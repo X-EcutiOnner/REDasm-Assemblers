@@ -1,6 +1,6 @@
-#include "arm/arm32.h"
+#include "arm/arm32/arm32.h"
+#include "arm/arm32/thumb.h"
 #include "arm/arm64.h"
-#include "arm/thumb.h"
 #include <redasm/redasm.h>
 
 void rd_plugin_create(void) {
