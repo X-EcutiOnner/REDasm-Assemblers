@@ -8,7 +8,6 @@ static const MIPSOpcode M_OPCODE_LI    = {MIPS_MACRO_LI,   MIPS_CATEGORY_NONE,  
 static const MIPSOpcode M_OPCODE_B     = {MIPS_MACRO_B,    MIPS_CATEGORY_JUMP,      MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
 static const MIPSOpcode M_OPCODE_BEQZ  = {MIPS_MACRO_BEQZ, MIPS_CATEGORY_JUMP_COND, MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
 static const MIPSOpcode M_OPCODE_BNEZ  = {MIPS_MACRO_BNEZ, MIPS_CATEGORY_JUMP_COND, MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
-static const MIPSOpcode M_OPCODE_LA    = {MIPS_MACRO_LA,   MIPS_CATEGORY_NONE,      MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
 static const MIPSOpcode M_OPCODE_LW    = {MIPS_MACRO_LW,   MIPS_CATEGORY_LOAD,      MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
 static const MIPSOpcode M_OPCODE_LHU   = {MIPS_MACRO_LHU,  MIPS_CATEGORY_LOAD,      MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
 static const MIPSOpcode M_OPCODE_SW    = {MIPS_MACRO_SW,   MIPS_CATEGORY_STORE,     MIPS_FORMAT_MACRO, MIPS_VERSION_NONE};
@@ -16,83 +15,7 @@ static const MIPSOpcode M_OPCODE_SH    = {MIPS_MACRO_SH,   MIPS_CATEGORY_STORE, 
 static const MIPSOpcode M_OPCODE_RET   = {MIPS_INSTR_JR,   MIPS_CATEGORY_RET,       MIPS_FORMAT_R,     MIPS_VERSION_NONE};
 // clang-format on
 
-static bool _mips_can_simplify_lui(const MIPSDecodedInstruction* lui,
-                                   const MIPSDecodedInstruction* next) {
-    switch(next->opcode->format) {
-        case MIPS_FORMAT_I: return lui->instr.i_u.rt == next->instr.i_u.rs;
-
-        case MIPS_FORMAT_R: {
-            if(next->instr.r.rd != next->instr.r.rs) return false;
-            return (lui->instr.i_u.rt == MIPS_REG_AT) &&
-                   (next->instr.r.rd == MIPS_REG_AT);
-        }
-
-        default: break;
-    }
-
-    return false;
-}
-
-static void _mips_patch_lui(const RDContext* ctx, MIPSDecodedInstruction* dec,
-                            RDAddress address) {
-    RDAddress nextaddress = address + dec->length;
-    MIPSDecodedInstruction next = {0};
-    bool ok;
-
-    if(rd_get_processor_plugin(ctx)->flags & RD_PF_BE)
-        ok = mips_decode_one_be(ctx, nextaddress, &next);
-    else
-        ok = mips_decode_one_le(ctx, nextaddress, &next);
-
-    if(!ok || !_mips_can_simplify_lui(dec, &next)) return;
-
-    u32 mipsaddress = (u32)dec->instr.i_u.imm << 16;
-
-    const MIPSOpcode* mop = NULL;
-
-    switch(next.opcode->id) {
-        case MIPS_INSTR_ORI:
-            mipsaddress |= (u32)next.instr.i_u.imm; // sign extend
-            mop = &M_OPCODE_LA;
-            break;
-
-        case MIPS_INSTR_ADDIU:
-            mipsaddress += (i32)next.instr.i_s.imm; // sign extend
-            mop = &M_OPCODE_LA;
-            break;
-
-        case MIPS_INSTR_LW:
-            mipsaddress += (i32)next.instr.i_s.imm; // sign extend
-            mop = &M_OPCODE_LW;
-            break;
-
-        case MIPS_INSTR_LHU:
-            mipsaddress += (i32)next.instr.i_s.imm; // sign extend
-            mop = &M_OPCODE_LHU;
-            break;
-
-        case MIPS_INSTR_SW:
-            mipsaddress += (i32)next.instr.i_s.imm; // sign extend
-            mop = &M_OPCODE_SW;
-            break;
-
-        case MIPS_INSTR_SH:
-            mipsaddress += (i32)next.instr.i_s.imm; // sign extend
-            mop = &M_OPCODE_SH;
-            break;
-
-        default: return;
-    }
-
-    // patch instruction to macro
-    dec->opcode = mop;
-    dec->length = sizeof(MIPSInstruction) * 2;
-    dec->macro.regimm.reg = next.instr.i_u.rt;
-    dec->macro.regimm.address = mipsaddress;
-}
-
-void mips_simplify(const RDContext* ctx, MIPSDecodedInstruction* dec,
-                   const RDInstruction* instr) {
+void mips_simplify(MIPSDecodedInstruction* dec) {
     switch(dec->opcode->id) {
         case MIPS_INSTR_ORI:
         case MIPS_INSTR_ADDI:
@@ -161,14 +84,24 @@ void mips_simplify(const RDContext* ctx, MIPSDecodedInstruction* dec,
             break;
         }
 
-        case MIPS_INSTR_JR: {
-            if(dec->instr.r.rs == MIPS_REG_RA) dec->opcode = &M_OPCODE_RET;
+        case MIPS_INSTR_BGEZ:
+        case MIPS_INSTR_BLEZ: {
+            if(dec->instr.i_s.rs == MIPS_REG_ZERO) {
+                i16 imm = dec->instr.i_s.imm;
+                dec->macro.regimm.s_imm16 = imm;
+                dec->opcode = &M_OPCODE_B;
+            }
+
             break;
         }
 
-        case MIPS_INSTR_LUI: {
-            if(!rd_instr_is_delay_slot(instr))
-                _mips_patch_lui(ctx, dec, instr->address);
+        case MIPS_INSTR_BGTZ: {
+            if(dec->instr.i_s.rs == MIPS_REG_ZERO) dec->opcode = &M_OPCODE_NOP;
+            break;
+        }
+
+        case MIPS_INSTR_JR: {
+            if(dec->instr.r.rs == MIPS_REG_RA) dec->opcode = &M_OPCODE_RET;
             break;
         }
 
@@ -215,12 +148,15 @@ void mips_decode_macro(const MIPSDecodedInstruction* dec,
             break;
         }
 
-        case MIPS_MACRO_LA: {
+        case MIPS_INSTR_BGEZ:
+        case MIPS_INSTR_BGTZ:
+        case MIPS_INSTR_BLEZ: {
             instr->operands[0].kind = RD_OP_REG;
-            instr->operands[0].reg = dec->macro.regimm.reg;
+            instr->operands[0].reg = dec->instr.i_s.rs;
             instr->operands[1].kind = RD_OP_ADDR;
-            instr->operands[1].addr = dec->macro.regimm.address;
-            break;
+            instr->operands[1].addr =
+                mips_calc_addr16(instr->address, dec->instr.i_s.imm);
+            return;
         }
 
         case MIPS_MACRO_LW:

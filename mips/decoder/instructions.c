@@ -31,8 +31,8 @@ static const char* const MIPS_MNEMONICS[] = {
     "lwc1", "swc1", "lwc2", "swc2",
 
     // Macro Instructions
-    "la", "li", "move", "lhu", "lw", "sw", "sh", "b", "beqz", "bnez",
-    "nop",
+    "li", "move", "lhu", "lw", "sw", "sh", 
+    "b", "beqz", "bnez", "nop",
 };
 // clang-format on
 

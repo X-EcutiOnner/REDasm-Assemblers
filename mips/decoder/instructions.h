@@ -91,7 +91,6 @@ typedef enum {
     MIPS_INSTR_SWC2,
 
     // Macro Instructions
-    MIPS_MACRO_LA,
     MIPS_MACRO_LI,
     MIPS_MACRO_MOVE,
     MIPS_MACRO_LHU,

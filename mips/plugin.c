@@ -21,10 +21,9 @@ static void _mips_handle_operands(RDContext* ctx, const RDInstruction* instr) {
     }
 }
 
-static void _mips32_process_decoded(const RDContext* ctx,
-                                    MIPSDecodedInstruction* dec,
+static void _mips32_process_decoded(MIPSDecodedInstruction* dec,
                                     RDInstruction* instr) {
-    mips_simplify(ctx, dec, instr);
+    mips_simplify(dec);
 
     instr->id = dec->opcode->id;
     instr->length = dec->length;
@@ -54,9 +53,9 @@ static void _mips32_decode_le(RDContext* ctx, RDInstruction* instr,
                               RDProcessor* p) {
     RD_UNUSED(p);
     MIPSDecodedInstruction dec = {0};
-    if(!mips_decode_one_le(ctx, instr->address, &dec)) return;
+    if(!mips_decode_le(ctx, instr->address, &dec)) return;
 
-    _mips32_process_decoded(ctx, &dec, instr);
+    _mips32_process_decoded(&dec, instr);
 }
 
 static void _mips32_decode_be(RDContext* ctx, RDInstruction* instr,
@@ -64,9 +63,9 @@ static void _mips32_decode_be(RDContext* ctx, RDInstruction* instr,
     RD_UNUSED(p);
 
     MIPSDecodedInstruction dec = {0};
-    if(!mips_decode_one_be(ctx, instr->address, &dec)) return;
+    if(!mips_decode_be(ctx, instr->address, &dec)) return;
 
-    _mips32_process_decoded(ctx, &dec, instr);
+    _mips32_process_decoded(&dec, instr);
 }
 
 static const char* _mips32_get_mnemonic(const RDInstruction* instr,
@@ -89,15 +88,6 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
                          : instr->address + instr->length;
 
     switch(instr->id) {
-        case MIPS_MACRO_LA: {
-            rd_add_xref(ctx, instr->address, instr->operands[1].addr,
-                        RD_DR_ADDRESS);
-
-            mips_set_regval(ctx, next, instr->operands[0].reg,
-                            instr->operands[1].addr);
-            break;
-        }
-
         case MIPS_MACRO_LW:
         case MIPS_MACRO_LHU: {
             rd_add_xref(ctx, instr->address, instr->operands[1].addr,
