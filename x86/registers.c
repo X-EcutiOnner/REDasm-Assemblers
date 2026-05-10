@@ -2,27 +2,6 @@
 #include <Zydis/Zydis.h>
 #include <string.h>
 
-// clang-format off
-static const RDReg X86_SREGS[] = {
-    ZYDIS_REGISTER_ES,
-    ZYDIS_REGISTER_CS,
-    ZYDIS_REGISTER_SS,
-    ZYDIS_REGISTER_DS,
-    ZYDIS_REGISTER_FS,
-    ZYDIS_REGISTER_GS,
-};
-
-static const RDReg X86_GPRS[] = {
-    ZYDIS_REGISTER_RAX, ZYDIS_REGISTER_RBX,
-    ZYDIS_REGISTER_RCX, ZYDIS_REGISTER_RDX,
-    ZYDIS_REGISTER_RSI, ZYDIS_REGISTER_RDI,
-    ZYDIS_REGISTER_R8,  ZYDIS_REGISTER_R9,
-    ZYDIS_REGISTER_R10, ZYDIS_REGISTER_R11,
-    ZYDIS_REGISTER_R12, ZYDIS_REGISTER_R13,
-    ZYDIS_REGISTER_R14, ZYDIS_REGISTER_R15,
-};
-// clang-format on
-
 static RDReg _x86_get_register_id(const char* name) {
     for(ZydisRegister r = ZYDIS_REGISTER_NONE + 1; r < ZYDIS_REGISTER_MAX_VALUE;
         r++) {
@@ -73,10 +52,8 @@ static RDReg _x86_canonical_reg(RDReg r) {
     return r;
 }
 
-bool x86_is_segment_reg(const RDOperand* op) {
-    if(op->kind != RD_OP_REG) return false;
-
-    switch(op->reg) {
+bool x86_is_segment_reg(RDReg r) {
+    switch(r) {
         case ZYDIS_REGISTER_ES:
         case ZYDIS_REGISTER_CS:
         case ZYDIS_REGISTER_SS:
@@ -90,23 +67,28 @@ bool x86_is_segment_reg(const RDOperand* op) {
     return false;
 }
 
-RDAddress x86_get_ip_value(const RDInstruction* instr) {
-    return instr->address + instr->length;
+void x86_set_regval(RDContext* ctx, RDAddress address, RDReg id, RDRegValue v) {
+    if(x86_is_segment_reg(id))
+        rd_auto_sregval_id(ctx, address, id, v);
+    else
+        rd_set_regval_id(ctx, id, v);
 }
 
-void x86_snapshot_regs(RDContext* ctx, const RDInstruction* instr,
-                       RDAddress target) {
-    for(int i = 0; i < rd_count_of(X86_SREGS); i++) {
-        u64 val;
-        if(rd_get_regval_id(ctx, instr->address, X86_SREGS[i], &val))
-            rd_auto_regval_id(ctx, target, X86_SREGS[i], val);
-    }
+bool x86_get_regval(RDContext* ctx, RDAddress address, RDReg id,
+                    RDRegValue* v) {
+    if(x86_is_segment_reg(id)) return rd_get_sregval_id(ctx, address, id, v);
+    return rd_get_regval_id(ctx, id, v);
+}
 
-    for(int i = 0; i < rd_count_of(X86_GPRS); i++) {
-        u64 val;
-        if(rd_get_regval_id(ctx, instr->address, X86_GPRS[i], &val))
-            rd_auto_regval_id(ctx, target, X86_GPRS[i], val);
-    }
+void x86_del_regval(RDContext* ctx, RDAddress address, RDReg id) {
+    if(x86_is_segment_reg(id))
+        rd_del_auto_sregval_id(ctx, address, id);
+    else
+        rd_del_regval_id(ctx, id);
+}
+
+RDAddress x86_get_ip_value(const RDInstruction* instr) {
+    return instr->address + instr->length;
 }
 
 void x86_track_math(RDContext* ctx, const RDInstruction* instr) {
@@ -116,38 +98,38 @@ void x86_track_math(RDContext* ctx, const RDInstruction* instr) {
     RDAddress next = x86_get_ip_value(instr);
 
     RDRegValue lhs, rhs, result;
-    bool lhs_known = rd_get_regval_id(ctx, instr->address, dst->reg, &lhs);
+    bool lhs_known = x86_get_regval(ctx, instr->address, dst->reg, &lhs);
 
     switch(instr->id) {
         case ZYDIS_MNEMONIC_INC: {
             if(lhs_known)
-                rd_auto_regval_id(ctx, next, dst->reg, lhs + 1);
+                x86_set_regval(ctx, next, dst->reg, lhs + 1);
             else
-                rd_del_auto_regval_id(ctx, next, dst->reg);
+                x86_del_regval(ctx, next, dst->reg);
             return;
         }
 
         case ZYDIS_MNEMONIC_DEC: {
             if(lhs_known)
-                rd_auto_regval_id(ctx, next, dst->reg, lhs - 1);
+                x86_set_regval(ctx, next, dst->reg, lhs - 1);
             else
-                rd_del_auto_regval_id(ctx, next, dst->reg);
+                x86_del_regval(ctx, next, dst->reg);
             return;
         }
 
         case ZYDIS_MNEMONIC_NOT: {
             if(lhs_known)
-                rd_auto_regval_id(ctx, next, dst->reg, ~lhs);
+                x86_set_regval(ctx, next, dst->reg, ~lhs);
             else
-                rd_del_auto_regval_id(ctx, next, dst->reg);
+                x86_del_regval(ctx, next, dst->reg);
             return;
         }
 
         case ZYDIS_MNEMONIC_NEG: {
             if(lhs_known)
-                rd_auto_regval_id(ctx, next, dst->reg, (RDRegValue)(-(i64)lhs));
+                x86_set_regval(ctx, next, dst->reg, (RDRegValue)(-(i64)lhs));
             else
-                rd_del_auto_regval_id(ctx, next, dst->reg);
+                x86_del_regval(ctx, next, dst->reg);
             return;
         }
 
@@ -165,10 +147,10 @@ void x86_track_math(RDContext* ctx, const RDInstruction* instr) {
         rhs_known = true;
     }
     else if(src->kind == RD_OP_REG)
-        rhs_known = rd_get_regval_id(ctx, instr->address, src->reg, &rhs);
+        rhs_known = x86_get_regval(ctx, instr->address, src->reg, &rhs);
 
     if(!lhs_known || !rhs_known) {
-        rd_del_auto_regval_id(ctx, next, dst->reg);
+        x86_del_regval(ctx, next, dst->reg);
         return;
     }
 
@@ -195,10 +177,10 @@ void x86_track_math(RDContext* ctx, const RDInstruction* instr) {
             break;
         }
 
-        default: rd_del_auto_regval_id(ctx, next, dst->reg); return;
+        default: x86_del_regval(ctx, next, dst->reg); return;
     }
 
-    rd_auto_regval_id(ctx, next, dst->reg, result);
+    x86_set_regval(ctx, next, dst->reg, result);
 }
 
 void x86_track_mov(RDContext* ctx, const RDInstruction* instr) {
@@ -209,26 +191,24 @@ void x86_track_mov(RDContext* ctx, const RDInstruction* instr) {
     RDAddress next = x86_get_ip_value(instr);
 
     switch(src->kind) {
-        case RD_OP_IMM: rd_auto_regval_id(ctx, next, dst->reg, src->imm); break;
+        case RD_OP_IMM: x86_set_regval(ctx, next, dst->reg, src->imm); break;
 
-        case RD_OP_ADDR:
-            rd_auto_regval_id(ctx, next, dst->reg, src->addr);
-            break;
+        case RD_OP_ADDR: x86_set_regval(ctx, next, dst->reg, src->addr); break;
 
         case RD_OP_REG: {
             u64 v;
 
-            if(rd_get_regval_id(ctx, instr->address, src->reg, &v))
-                rd_auto_regval_id(ctx, next, dst->reg, v);
+            if(x86_get_regval(ctx, instr->address, src->reg, &v))
+                x86_set_regval(ctx, next, dst->reg, v);
             else
-                rd_del_auto_regval_id(ctx, next, dst->reg);
+                x86_del_regval(ctx, next, dst->reg);
 
             break;
         }
 
         default: { // memory source: invalidate if 'dst' is a segment reg
-            if(x86_is_segment_reg(dst))
-                rd_del_auto_regval_id(ctx, next, dst->reg);
+            if(dst->kind == RD_OP_REG && x86_is_segment_reg(dst->reg))
+                x86_del_regval(ctx, next, dst->reg);
 
             break;
         }
@@ -242,7 +222,7 @@ bool x86_track_pop(RDContext* ctx, const RDInstruction* instr) {
     if(dst->kind != RD_OP_REG) return false;
 
     RDAddress next = x86_get_ip_value(instr);
-    rd_del_auto_regval_id(ctx, next, dst->reg);
+    x86_del_regval(ctx, next, dst->reg);
     return true;
 }
 

@@ -5,24 +5,6 @@
 #include <redasm/redasm.h>
 #include <stdlib.h>
 
-// clang-format off
-static const char* x86_16_prologues[] = {
-    "55 89 E5 83 EC ??", // push bp; mov bp, sp; sub sp, N (small frame)
-    "55 89 E5",          // push bp; mov bp, sp
-    "C8 ?? ?? 00",       // enter N, 0
-    NULL,
-};
-
-static const char* x86_32_prologues[] = {
-    "55 8B EC 81 EC ?? ?? ?? ??", // push ebp; mov ebp, esp; sub esp, NNNN (large frame)
-    "55 8B EC 83 EC ??",          // push ebp; mov ebp, esp; sub esp, N (small frame)
-    "8B FF 55 8B EC",             // mov edi, edi; push ebp; mov ebp, esp (ms-hotpatch)
-    "55 8B EC",                   // push ebp; mov ebp, esp
-    "C8 ?? ?? 00",                // enter N, 0
-    NULL,
-};
-// clang-format on
-
 // const RDCallingConvention* x86_32_calling_conventions[] = {
 //     &x86_cc::cdecl_cc,
 //     nullptr,
@@ -36,7 +18,6 @@ typedef struct X86UserData {
 typedef struct X86Processor {
     ZydisDecoder decoder;
     char buffer[ZYDIS_MAX_INSTRUCTION_LENGTH];
-    const char** prologues;
     // const RDCallingConvention** calling_conventions{nullptr};
 } X86Processor;
 
@@ -83,34 +64,27 @@ static void _x86_default_emulate(RDContext* ctx, const RDInstruction* instr) {
     rd_foreach_operand(i, op, instr) {
         switch(op->kind) {
             case RD_OP_ADDR: {
-                if(rd_is_jump(instr)) {
-                    x86_snapshot_regs(ctx, instr, op->addr);
+                if(rd_instr_is_jump(instr))
                     rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
-                }
-                else if(rd_is_call(instr)) {
-                    x86_snapshot_regs(ctx, instr, op->addr);
+                else if(rd_instr_is_call(instr))
                     rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-                }
-                else {
+                else
                     rd_add_xref(ctx, instr->address, op->addr, RD_DR_ADDRESS);
-                }
 
                 break;
             }
 
             case RD_OP_MEM: {
-                if(rd_is_jump(instr)) {
+                if(rd_instr_is_jump(instr)) {
                     X86Address addr = x86_read_address(ctx, op->mem);
                     if(addr.has_value) {
-                        x86_snapshot_regs(ctx, instr, addr.value);
                         rd_add_xref(ctx, instr->address, addr.value,
                                     RD_CR_JUMP);
                     }
                 }
-                else if(rd_is_call(instr)) {
+                else if(rd_instr_is_call(instr)) {
                     X86Address addr = x86_read_address(ctx, op->mem);
                     if(addr.has_value) {
-                        x86_snapshot_regs(ctx, instr, addr.value);
                         rd_add_xref(ctx, instr->address, addr.value,
                                     RD_CR_CALL);
                     }
@@ -163,12 +137,13 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
             case ZYDIS_OPERAND_TYPE_REGISTER:
                 op->kind = RD_OP_REG;
                 op->reg = zop->reg.value;
+                if(rd_instr_is_branch(instr)) instr->indirect = true;
                 break;
 
             case ZYDIS_OPERAND_TYPE_IMMEDIATE: {
                 ZyanU64 addr = 0;
 
-                if(rd_is_branch(instr) &&
+                if(rd_instr_is_branch(instr) &&
                    ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
                        &zinstr, zop, instr->address, &addr))) {
                     op->kind = RD_OP_ADDR;
@@ -190,16 +165,8 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
             }
 
             case ZYDIS_OPERAND_TYPE_MEMORY: {
-                if(zop->mem.base != ZYDIS_REGISTER_NONE &&
-                   zop->mem.index != ZYDIS_REGISTER_NONE &&
-                   !zop->mem.disp.has_displacement) {
-                    op->kind = RD_OP_PHRASE;
-                    op->phrase.base = zop->mem.base;
-                    op->phrase.index = zop->mem.index;
-                    op->userdata1 = zop->mem.segment;
-                }
-                else if(zop->mem.base == ZYDIS_REGISTER_NONE &&
-                        zop->mem.index == ZYDIS_REGISTER_NONE) {
+                if(zop->mem.base == ZYDIS_REGISTER_NONE &&
+                   zop->mem.index == ZYDIS_REGISTER_NONE) {
                     op->kind = RD_OP_MEM;
 
                     ZyanU64 addr = 0;
@@ -221,11 +188,19 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
                 else {
                     op->kind = RD_OP_DISPL;
                     op->displ.base = zop->mem.base;
-                    op->displ.index = zop->mem.index;
+                    op->displ.index = zop->mem.index == ZYDIS_REGISTER_NONE
+                                          ? RD_REGID_UNKNOWN
+                                          : zop->mem.index;
                     op->displ.scale = zop->mem.scale;
-                    op->displ.offset = zop->mem.disp.value;
+
+                    op->displ.offset = zop->mem.disp.has_displacement
+                                           ? zop->mem.disp.value
+                                           : 0;
+
                     op->userdata1 = zop->mem.segment;
                 }
+
+                if(rd_instr_is_branch(instr)) instr->indirect = true;
                 break;
             }
 
@@ -265,34 +240,13 @@ static bool x86_render_operand(RDRenderer* r, const RDInstruction* instr,
 
             rd_renderer_loc(r, op->mem, 0, 0);
             rd_renderer_norm(r, "]");
-            break;
+            return true;
         }
 
-        case RD_OP_DISPL: {
-            rd_renderer_norm(r, "[");
-            rd_renderer_reg(r, op->displ.base);
-
-            if(op->displ.index != ZYDIS_REGISTER_NONE) {
-                rd_renderer_norm(r, "+");
-                rd_renderer_reg(r, op->displ.index);
-
-                if(op->displ.scale > 1) {
-                    rd_renderer_norm(r, "*");
-                    rd_renderer_num(r, op->displ.scale, 16, 0, RD_NUM_DEFAULT);
-                }
-            }
-
-            if(op->displ.offset != 0)
-                rd_renderer_loc(r, op->displ.offset, 0, RD_NUM_SIGNED);
-
-            rd_renderer_norm(r, "]");
-            break;
-        }
-
-        default: return false;
+        default: break;
     }
 
-    return true;
+    return false;
 }
 
 static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
@@ -328,19 +282,12 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
     }
 
     if(fallback) _x86_default_emulate(ctx, instr);
-    if(rd_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
+    if(rd_instr_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
 static RDProcessor* x86_create(const RDProcessorPlugin* plugin) {
     X86UserData* ud = (X86UserData*)plugin->userdata;
     X86Processor* self = calloc(1, sizeof(X86Processor));
-
-    if(ud->mode == ZYDIS_MACHINE_MODE_LEGACY_32)
-        self->prologues = x86_32_prologues;
-    else if(ud->mode == ZYDIS_MACHINE_MODE_LEGACY_16)
-        self->prologues = x86_16_prologues;
-    else
-        self->prologues = NULL;
 
     ZydisDecoderInit(&self->decoder, ud->mode, ud->width);
     return (RDProcessor*)self;
@@ -357,12 +304,6 @@ static const char* x86_get_mnemonic(const RDInstruction* instr,
 static const char* x86_get_reg_name(RDReg reg, RDProcessor* p) {
     RD_UNUSED(p);
     return ZydisRegisterGetString((ZydisRegister)reg);
-}
-
-static const char** x86_get_prologues(RDProcessor* p, const RDContext* ctx) {
-    RD_UNUSED(ctx);
-    X86Processor* self = (X86Processor*)p;
-    return self->prologues;
 }
 
 static void x86_register_processor(RDProcessorPlugin* plugin,
@@ -388,7 +329,6 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
     plugin->get_mnemonic = x86_get_mnemonic;
     plugin->get_reg_name = x86_get_reg_name;
     plugin->get_reg_mask = x86_get_reg_mask;
-    plugin->get_prologues = x86_get_prologues;
 
     // plugin->get_callingconventions = [](const RDProcessor* self) {
     //     return reinterpret_cast<const

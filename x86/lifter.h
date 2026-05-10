@@ -2,5 +2,5 @@
 
 #include <redasm/redasm.h>
 
-void x86_lift(RDContext* ctx, const RDInstruction* instr, RDILInstruction* il,
+void x86_lift(RDContext* ctx, RDInstructionVect* v, const RDInstruction* instr,
               RDProcessor* p);
