@@ -1,6 +1,7 @@
 #include "decoder/formats.h"
 #include "decoder/macros.h"
 #include "decoder/registers.h"
+#include "lifter.h"
 #include "registers.h"
 #include <redasm/redasm.h>
 
@@ -8,9 +9,9 @@ static void _mips_handle_operands(RDContext* ctx, const RDInstruction* instr) {
     rd_foreach_operand(i, op, instr) {
         switch(op->kind) {
             case RD_OP_ADDR: {
-                if(rd_is_call(instr))
+                if(rd_instr_is_call(instr))
                     rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-                else if(rd_is_jump(instr))
+                else if(rd_instr_is_jump(instr))
                     rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
                 break;
             };
@@ -83,8 +84,9 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
                             RDProcessor* p) {
     RD_UNUSED(p);
 
-    RDAddress next = rd_is_delay_slot(instr) ? instr->address
-                                             : instr->address + instr->length;
+    RDAddress next = rd_instr_is_delay_slot(instr)
+                         ? instr->address
+                         : instr->address + instr->length;
 
     switch(instr->id) {
         case MIPS_MACRO_LA: {
@@ -123,7 +125,7 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
                                &val))
                 mips_set_regval(ctx, next, instr->operands[0].reg, val);
             else
-                rd_del_auto_regval_id(ctx, next, instr->operands[0].reg);
+                mips_del_regval(ctx, next, instr->operands[0].reg);
 
             break;
         }
@@ -147,7 +149,7 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
                     rd_add_xref(ctx, instr->address, result, RD_DR_ADDRESS);
             }
             else
-                rd_del_auto_regval_id(ctx, next, instr->operands[0].reg);
+                mips_del_regval(ctx, next, instr->operands[0].reg);
 
             break;
         }
@@ -163,7 +165,7 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
                     rd_add_xref(ctx, instr->address, result, RD_DR_ADDRESS);
             }
             else
-                rd_del_auto_regval_id(ctx, next, instr->operands[0].reg);
+                mips_del_regval(ctx, next, instr->operands[0].reg);
 
             break;
         }
@@ -205,14 +207,15 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
         default: _mips_handle_operands(ctx, instr); break;
     }
 
-    if(rd_is_delay_slot(instr)) {
+    if(rd_instr_is_delay_slot(instr)) {
         RDDelaySlotInfo dslot = rd_get_delay_slot_info(ctx);
 
-        if(dslot.n == dslot.instr.delay_slots && !rd_can_flow(&dslot.instr))
+        if(dslot.n == dslot.instr.delay_slots &&
+           !rd_instr_can_flow(&dslot.instr))
             return;
     }
 
-    if(rd_can_flow(instr) || instr->delay_slots)
+    if(rd_instr_can_flow(instr) || instr->delay_slots)
         rd_flow(ctx, instr->address + instr->length);
 }
 
@@ -262,6 +265,7 @@ static const RDProcessorPlugin MIPS32_BE = {
     .get_reg_name = _mips32_get_reg_name,
     .decode = _mips32_decode_be,
     .emulate = _mips32_emulate,
+    .lift = mips32_lift,
     .render_mnemonic = _mips32_render_mnemonic,
     .render_operand = _mips32_render_operand,
 };
@@ -277,6 +281,7 @@ static const RDProcessorPlugin MIPS32_LE = {
     .get_reg_name = _mips32_get_reg_name,
     .decode = _mips32_decode_le,
     .emulate = _mips32_emulate,
+    .lift = mips32_lift,
     .render_mnemonic = _mips32_render_mnemonic,
     .render_operand = _mips32_render_operand,
 };

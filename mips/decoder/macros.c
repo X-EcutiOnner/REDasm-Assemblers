@@ -167,7 +167,7 @@ void mips_simplify(const RDContext* ctx, MIPSDecodedInstruction* dec,
         }
 
         case MIPS_INSTR_LUI: {
-            if(!rd_is_delay_slot(instr))
+            if(!rd_instr_is_delay_slot(instr))
                 _mips_patch_lui(ctx, dec, instr->address);
             break;
         }
