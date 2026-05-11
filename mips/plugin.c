@@ -197,16 +197,7 @@ static void _mips32_emulate(RDContext* ctx, const RDInstruction* instr,
         default: _mips_handle_operands(ctx, instr); break;
     }
 
-    if(rd_instr_is_delay_slot(instr)) {
-        RDDelaySlotInfo dslot = rd_get_delay_slot_info(ctx);
-
-        if(dslot.n == dslot.instr.delay_slots &&
-           !rd_instr_can_flow(&dslot.instr))
-            return;
-    }
-
-    if(rd_instr_can_flow(instr) || instr->delay_slots)
-        rd_flow(ctx, instr->address + instr->length);
+    if(rd_instr_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
 static bool _mips32_render_mnemonic(RDRenderer* r, const RDInstruction* instr,
