@@ -21,6 +21,44 @@ typedef struct X86Processor {
     // const RDCallingConvention** calling_conventions{nullptr};
 } X86Processor;
 
+static RDAddress _x86_ptr_to_address(u16 seg_idx, u16 seg_offset,
+                                     const RDContext* ctx) {
+    const RDProcessorPlugin* plugin = rd_get_processor_plugin(ctx);
+    const X86UserData* ud = (const X86UserData*)plugin->userdata;
+
+    if(ud->mode == ZYDIS_MACHINE_MODE_REAL_16)
+        return ((RDAddress)seg_idx * 0x10) + seg_offset;
+
+    return ((RDAddress)seg_idx * 0x10000) + seg_offset;
+}
+
+static bool _x86_calc_address(RDAddress addr,
+                              const ZydisDecodedInstruction* zinstr,
+                              const ZydisDecodedOperand* zop, RDContext* ctx,
+                              RDAddress* outaddr) {
+    ZyanU64 zaddr = 0;
+    if(!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(zinstr, zop, addr, &zaddr)))
+        return false;
+
+    const RDProcessorPlugin* plugin = rd_get_processor_plugin(ctx);
+    const X86UserData* ud = (const X86UserData*)plugin->userdata;
+
+    if(ud->mode == ZYDIS_MACHINE_MODE_REAL_16 ||
+       ud->mode == ZYDIS_MACHINE_MODE_LEGACY_16) {
+        RDRegValue seg_base = 0;
+
+        if(zop->type == ZYDIS_OPERAND_TYPE_MEMORY)
+            rd_get_sregval_id(ctx, addr, zop->mem.segment, &seg_base);
+        else
+            rd_get_sregval(ctx, addr, "cs", &seg_base);
+
+        zaddr = ((RDAddress)seg_base * 16) + (zaddr & 0xFFFF);
+    }
+
+    *outaddr = (RDAddress)zaddr;
+    return true;
+}
+
 static bool _x86_is_addr_operand(const RDContext* ctx,
                                  const RDInstruction* instr,
                                  const ZydisDecodedOperand* zop) {
@@ -141,11 +179,11 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
                 break;
 
             case ZYDIS_OPERAND_TYPE_IMMEDIATE: {
-                ZyanU64 addr = 0;
+                RDAddress addr = 0;
 
                 if(rd_instr_is_branch(instr) &&
-                   ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
-                       &zinstr, zop, instr->address, &addr))) {
+                   _x86_calc_address(instr->address, &zinstr, zop, ctx,
+                                     &addr)) {
                     op->kind = RD_OP_ADDR;
                     op->addr = addr;
                 }
@@ -169,10 +207,10 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
                    zop->mem.index == ZYDIS_REGISTER_NONE) {
                     op->kind = RD_OP_MEM;
 
-                    ZyanU64 addr = 0;
+                    RDAddress addr = 0;
 
-                    if(ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
-                           &zinstr, zop, instr->address, &addr))) {
+                    if(_x86_calc_address(instr->address, &zinstr, zop, ctx,
+                                         &addr)) {
                         op->mem = addr;
                     }
                     else if(zop->mem.disp.has_displacement)
@@ -201,6 +239,13 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
                 }
 
                 if(rd_instr_is_branch(instr)) instr->indirect = true;
+                break;
+            }
+
+            case ZYDIS_OPERAND_TYPE_POINTER: {
+                op->kind = RD_OP_ADDR;
+                op->addr =
+                    _x86_ptr_to_address(zop->ptr.segment, zop->ptr.offset, ctx);
                 break;
             }
 
