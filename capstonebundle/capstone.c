@@ -1,5 +1,4 @@
 #include "capstone.h"
-#include <stdlib.h>
 
 Capstone* capstone_create(const CapstoneInitData* data, int size) {
     csh h;
@@ -10,7 +9,7 @@ Capstone* capstone_create(const CapstoneInitData* data, int size) {
         return NULL;
     }
 
-    Capstone* self = malloc(size);
+    Capstone* self = rd_alloc(size);
     *self = (Capstone){.data = data, .handle = h};
 
     cs_option(self->handle, CS_OPT_DETAIL, CS_OPT_ON);
@@ -24,7 +23,7 @@ void capstone_destroy(Capstone* self) {
 
     if(self->handle) cs_close(&self->handle);
     if(self->insn) cs_free(self->insn, 1);
-    free(self);
+    rd_free(self);
 }
 
 RDProcessor* capstone_plugin_create(const RDProcessorPlugin* p) {

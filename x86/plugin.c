@@ -3,7 +3,6 @@
 #include "registers.h"
 #include <Zydis/Zydis.h>
 #include <redasm/redasm.h>
-#include <stdlib.h>
 
 /* Segment register arithmetic for 16-bit modes.
  *
@@ -353,13 +352,13 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
 
 static RDProcessor* x86_create(const RDProcessorPlugin* plugin) {
     X86UserData* ud = (X86UserData*)plugin->userdata;
-    X86Processor* self = calloc(1, sizeof(X86Processor));
+    X86Processor* self = rd_alloc0(1, sizeof(X86Processor));
 
     ZydisDecoderInit(&self->decoder, ud->mode, ud->width);
     return (RDProcessor*)self;
 }
 
-static void x86_destroy(RDProcessor* p) { free(p); }
+static void x86_destroy(RDProcessor* p) { rd_free(p); }
 
 static const char* x86_get_mnemonic(const RDInstruction* instr,
                                     RDProcessor* p) {
@@ -376,7 +375,7 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
                                    ZydisMachineMode mode, ZydisStackWidth width,
                                    const char* id, const char* name,
                                    int addrsize, int intsize) {
-    X86UserData* ud = malloc(sizeof(*ud));
+    X86UserData* ud = rd_alloc(sizeof(*ud));
     ud->mode = mode;
     ud->width = width;
 
@@ -428,8 +427,8 @@ void rd_plugin_create(void) {
 }
 
 void rd_plugin_destroy(void) {
-    free(x86_16_real.userdata);
-    free(x86_16.userdata);
-    free(x86_32.userdata);
-    free(x86_64.userdata);
+    rd_free(x86_16_real.userdata);
+    rd_free(x86_16.userdata);
+    rd_free(x86_32.userdata);
+    rd_free(x86_64.userdata);
 }
