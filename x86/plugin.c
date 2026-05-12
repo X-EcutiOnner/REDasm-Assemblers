@@ -5,6 +5,27 @@
 #include <redasm/redasm.h>
 #include <stdlib.h>
 
+/* Segment register arithmetic for 16-bit modes.
+ *
+ * Real mode (x86_16_real):
+ *   seg holds a paragraph (physical_address / 16), so seg * 16 = base.
+ *
+ * Protected mode (x86_16):
+ *   Selectors have no meaningful arithmetic value at runtime, but loaders
+ *   maps segment N at N * 0x10000 and seeds segment registers as
+ *   paragraphs: cs = (N * 0x10000) >> 4 = N * 0x1000.
+ *   So seg * 16 = N * 0x1000 * 16 = N * 0x10000 is the correct flat base.
+ *
+ * The formula is identical for both modes.
+ *
+ * ANY LOADER TARGETING X86_16 MUST ALIGN SEGMENTS TO 0x10000 BOUNDARIES
+ * AND SEED SEGMENT REGISTERS AS PARAGRAPHS FOR THIS TO HOLD.
+ *
+ * TLDR:
+ * - align all segments to 0x10000
+ * - segment registers keeps the index to mapped segments
+ */
+
 // const RDCallingConvention* x86_32_calling_conventions[] = {
 //     &x86_cc::cdecl_cc,
 //     nullptr,
