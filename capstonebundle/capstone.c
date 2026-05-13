@@ -57,5 +57,5 @@ const cs_insn* capstone_plugin_decode(RDInstruction* instr, const char* code,
 const char* capstone_plugin_get_mnemonic(const RDInstruction* instr,
                                          RDProcessor* p) {
     RD_UNUSED(p);
-    return instr->mnemonic;
+    return instr->mnemonic_buf;
 }
