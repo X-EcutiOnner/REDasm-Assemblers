@@ -48,12 +48,11 @@ static arm_reg _capstone_arm32_index_to_reg(int idx) {
 
 static bool _capstone_arm32_get_regval(RDContext* ctx, RDAddress address,
                                        arm_reg reg, RDRegValue* val,
-                                       RDProcessor* p) {
+                                       const ARMCapstone* p) {
     if(rd_get_regval_id(ctx, reg, val)) return true;
 
     if(reg == ARM_REG_PC) {
-        ARMCapstone* capstone = (ARMCapstone*)p;
-        *val = capstone->get_pc(address);
+        *val = p->get_pc(address);
         return true;
     }
 
@@ -67,9 +66,13 @@ static void _capstone_arm32_set_regval(RDContext* ctx, arm_reg reg,
 
 void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
                                    RDProcessor* p) {
+    const ARMCapstone* capstone = (const ARMCapstone*)p;
     const RDProcessorPlugin* plugin = rd_get_processor_plugin(ctx);
     bool is_be = plugin->flags & RD_PF_BE;
     RDAddress next = instr->address + instr->length;
+
+    RDRegValue t;
+    bool is_thumb = rd_get_sregval(ctx, instr->address, "T", &t) && t != 0;
 
     switch(instr->id) {
         case ARM_INS_MOV: {
@@ -82,7 +85,7 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
             else if(dst->kind == RD_OP_REG && src->kind == RD_OP_REG) {
                 RDRegValue val;
                 if(_capstone_arm32_get_regval(ctx, instr->address, src->reg,
-                                              &val, p))
+                                              &val, capstone))
                     _capstone_arm32_set_regval(ctx, dst->reg, val);
                 else
                     rd_del_regval_id(ctx, dst->reg);
@@ -100,7 +103,8 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
         case ARM_INS_MOVT: {
             RDRegValue lo;
             if(_capstone_arm32_get_regval(ctx, instr->address,
-                                          instr->operands[0].reg, &lo, p)) {
+                                          instr->operands[0].reg, &lo,
+                                          capstone)) {
                 u32 result =
                     ((u32)instr->operands[1].s_imm << 16) | (lo & 0xFFFF);
                 _capstone_arm32_set_regval(ctx, instr->operands[0].reg, result);
@@ -132,10 +136,24 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
 
     rd_foreach_operand(i, op, instr) {
         if(op->kind == RD_OP_ADDR) {
-            if(rd_instr_is_call(instr))
+            if(rd_instr_is_call(instr)) {
+                // propagate THUMB status
+                rd_auto_sregval(ctx, op->addr, "T", is_thumb);
+                rd_auto_sregval(ctx, capstone->get_pc(instr->address), "T",
+                                is_thumb);
+
                 rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
-            else if(rd_instr_is_jump(instr))
+            }
+            else if(rd_instr_is_jump(instr)) {
+                // propagate THUMB status
+                rd_auto_sregval(ctx, op->addr, "T", is_thumb);
+
+                if(rd_instr_is_cond(instr))
+                    rd_auto_sregval(ctx, capstone->get_pc(instr->address), "T",
+                                    is_thumb);
+
                 rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
+            }
             else
                 rd_add_xref(ctx, instr->address, op->addr, RD_DR_ADDRESS);
         }
@@ -230,6 +248,12 @@ bool capstone_arm32_decode_flow(const cs_insn* cs_insn, RDInstruction* instr) {
                 instr->flow = (d->cc == ARMCC_AL || d->cc == ARMCC_Invalid)
                                   ? RD_IF_JUMP
                                   : RD_IF_JUMP_COND;
+            break;
+        }
+
+        case ARM_INS_CBZ:
+        case ARM_INS_CBNZ: {
+            instr->flow = RD_IF_JUMP_COND;
             break;
         }
 
