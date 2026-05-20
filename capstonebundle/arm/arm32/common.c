@@ -119,13 +119,31 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
             const RDOperand* dst = &instr->operands[0];
             const RDOperand* src = &instr->operands[1];
 
-            if(dst->kind == RD_OP_REG && src->kind == RD_OP_MEM) {
-                u32 val;
+            if(dst->kind == RD_OP_REG) {
+                if(src->kind == RD_OP_MEM) {
+                    u32 val;
 
-                bool ok = is_be ? rd_read_be32(ctx, src->mem, &val)
-                                : rd_read_le32(ctx, src->mem, &val);
+                    bool ok = is_be ? rd_read_be32(ctx, src->mem, &val)
+                                    : rd_read_le32(ctx, src->mem, &val);
 
-                if(ok) _capstone_arm32_set_regval(ctx, dst->reg, val);
+                    if(ok) _capstone_arm32_set_regval(ctx, dst->reg, val);
+                }
+                else if(src->kind == RD_OP_DISPL) {
+                    RDRegValue base;
+                    if(_capstone_arm32_get_regval(ctx, instr->address,
+                                                  src->displ.base, &base,
+                                                  capstone)) {
+
+                        RDAddress addr = base + src->displ.offset;
+
+                        if(dst->reg == ARM_REG_PC) {
+                            rd_add_xref(ctx, instr->address, addr, RD_CR_JUMP);
+                            return;
+                        }
+
+                        _capstone_arm32_set_regval(ctx, dst->reg, addr);
+                    }
+                }
             }
 
             break;
