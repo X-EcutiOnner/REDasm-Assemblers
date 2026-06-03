@@ -126,7 +126,7 @@ static void _arm64_emulate(RDContext* ctx, const RDInstruction* instr,
 }
 
 static bool _arm64_render_operand(RDRenderer* r, const RDInstruction* instr,
-                                  usize idx, RDProcessor* p) {
+                                  int idx, RDProcessor* p) {
     RD_UNUSED(p);
     const RDOperand* op = &instr->operands[idx];
 

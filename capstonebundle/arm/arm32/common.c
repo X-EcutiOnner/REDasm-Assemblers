@@ -189,7 +189,7 @@ void capstone_plugin_arm32_emulate(RDContext* ctx, const RDInstruction* instr,
 }
 
 bool capstone_plugin_arm32_render_operand(RDRenderer* r,
-                                          const RDInstruction* instr, usize idx,
+                                          const RDInstruction* instr, int idx,
                                           RDProcessor* p) {
     RD_UNUSED(p);
     const RDOperand* op = &instr->operands[idx];

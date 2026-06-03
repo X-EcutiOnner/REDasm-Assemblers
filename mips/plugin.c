@@ -220,7 +220,7 @@ static bool _mips32_render_mnemonic(RDRenderer* r, const RDInstruction* instr,
 }
 
 static bool _mips32_render_operand(RDRenderer* r, const RDInstruction* instr,
-                                   usize idx, RDProcessor* p) {
+                                   int idx, RDProcessor* p) {
     RD_UNUSED(p);
     const RDOperand* op = &instr->operands[idx];
 

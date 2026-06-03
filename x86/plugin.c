@@ -289,7 +289,7 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
 }
 
 static bool x86_render_operand(RDRenderer* r, const RDInstruction* instr,
-                               usize idx, RDProcessor* proc) {
+                               int idx, RDProcessor* proc) {
     RD_UNUSED(proc);
     const RDOperand* op = &instr->operands[idx];
 
