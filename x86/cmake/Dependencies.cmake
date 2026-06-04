@@ -5,6 +5,7 @@ function(setup_dependencies)
         NAME zydis
         VERSION "4.1.1"
         GITHUB_REPOSITORY "zyantific/zydis"
+        EXCLUDE_FROM_ALL YES
 
         OPTIONS 
             "CMAKE_POSITION_INDEPENDENT_CODE ON"
