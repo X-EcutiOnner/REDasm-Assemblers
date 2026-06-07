@@ -432,3 +432,11 @@ void rd_plugin_destroy(void) {
     rd_free(x86_32.userdata);
     rd_free(x86_64.userdata);
 }
+
+const char* rd_plugin_version(void) {
+    int major = ZYDIS_VERSION_MAJOR(ZYDIS_VERSION);
+    int minor = ZYDIS_VERSION_MAJOR(ZYDIS_VERSION);
+    int patch = ZYDIS_VERSION_MAJOR(ZYDIS_VERSION);
+
+    return rd_format("1.0 (Zydis %d.%d.%d)", major, minor, patch);
+}
