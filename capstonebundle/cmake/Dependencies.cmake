@@ -1,7 +1,7 @@
 include(cmake/CPM.cmake)
 
 function(setup_dependencies)
-    find_package(capstone QUIET)
+    find_package(capstone 6.0 QUIET)
 
     if(capstone_FOUND)
         if(NOT TARGET capstone)
