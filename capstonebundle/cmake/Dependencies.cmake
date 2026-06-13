@@ -13,6 +13,7 @@ function(setup_dependencies)
             NAME capstone
             GIT_TAG "6.0.0-Alpha7"
             GITHUB_REPOSITORY "capstone-engine/capstone"
+            GIT_SHALLOW ON
 
             OPTIONS 
                 "CAPSTONE_ARCHITECTURE_DEFAULT OFF"
