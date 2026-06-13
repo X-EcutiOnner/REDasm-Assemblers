@@ -13,6 +13,7 @@ function(setup_dependencies)
             NAME zydis
             VERSION "4.1.1"
             GITHUB_REPOSITORY "zyantific/zydis"
+            GIT_SHALLOW ON
             EXCLUDE_FROM_ALL YES
 
             OPTIONS 
