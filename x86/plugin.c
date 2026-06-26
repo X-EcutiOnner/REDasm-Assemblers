@@ -276,6 +276,10 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
     switch(zinstr.mnemonic) {
         case ZYDIS_MNEMONIC_HLT:
         case ZYDIS_MNEMONIC_INT3:
+            instr->no_ret = true;
+            instr->flow = RD_IF_STOP;
+            break;
+
         case ZYDIS_MNEMONIC_RET:
         case ZYDIS_MNEMONIC_IRET: instr->flow = RD_IF_STOP; break;
 
