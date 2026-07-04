@@ -3,6 +3,19 @@
 #include <Zydis/Zydis.h>
 #include <redasm/redasm.h>
 
+typedef struct X86UserData {
+    ZydisMachineMode mode;
+    ZydisStackWidth width;
+} X86UserData;
+
+typedef struct X86Processor {
+    const X86UserData* userdata;
+    ZydisDecoder decoder;
+    char buffer[ZYDIS_MAX_INSTRUCTION_LENGTH];
+    RDLexer* lex;
+    // const RDCallingConvention** calling_conventions{nullptr};
+} X86Processor;
+
 typedef struct X86Address {
     RDAddress value;
     bool has_value;

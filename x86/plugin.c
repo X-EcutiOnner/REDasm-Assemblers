@@ -1,4 +1,5 @@
 #include "common.h"
+#include "encoder/encoder.h"
 #include "lifter.h"
 #include "registers.h"
 #include <Zydis/Zydis.h>
@@ -29,17 +30,6 @@
 //     &x86_cc::cdecl_cc,
 //     nullptr,
 // };
-
-typedef struct X86UserData {
-    ZydisMachineMode mode;
-    ZydisStackWidth width;
-} X86UserData;
-
-typedef struct X86Processor {
-    ZydisDecoder decoder;
-    char buffer[ZYDIS_MAX_INSTRUCTION_LENGTH];
-    // const RDCallingConvention** calling_conventions{nullptr};
-} X86Processor;
 
 static RDAddress _x86_ptr_to_address(u16 seg_idx, u16 seg_offset,
                                      const RDContext* ctx) {
@@ -355,14 +345,20 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
 }
 
 static RDProcessor* x86_create(const RDProcessorPlugin* plugin) {
-    X86UserData* ud = (X86UserData*)plugin->userdata;
+    const X86UserData* ud = (X86UserData*)plugin->userdata;
     X86Processor* self = rd_alloc0(1, sizeof(X86Processor));
+    self->userdata = ud;
+    self->lex = rd_lexer_create(NULL);
 
     ZydisDecoderInit(&self->decoder, ud->mode, ud->width);
     return (RDProcessor*)self;
 }
 
-static void x86_destroy(RDProcessor* p) { rd_free(p); }
+static void x86_destroy(RDProcessor* p) {
+    X86Processor* self = (X86Processor*)p;
+    rd_lexer_destroy(self->lex);
+    rd_free(self);
+}
 
 static const char* x86_get_mnemonic(const RDInstruction* instr,
                                     RDProcessor* p) {
@@ -390,6 +386,7 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
     plugin->int_size = intsize;
     plugin->userdata = ud;
     plugin->decode = x86_decode;
+    plugin->encode = x86_encode;
     plugin->emulate = x86_emulate;
     plugin->lift = x86_lift;
     plugin->render_operand = x86_render_operand;
