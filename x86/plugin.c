@@ -349,6 +349,7 @@ static RDProcessor* x86_create(const RDProcessorPlugin* plugin) {
     X86Processor* self = rd_alloc0(1, sizeof(X86Processor));
     self->userdata = ud;
     self->lex = rd_lexer_create(NULL);
+    rd_lexer_set_default_base(self->lex, 16);
 
     ZydisDecoderInit(&self->decoder, ud->mode, ud->width);
     return (RDProcessor*)self;

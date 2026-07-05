@@ -11,7 +11,7 @@ bool x86_encode(RDContext* ctx, RDAddress address, const char* s,
     X86GrammarData g = {
         .ctx = ctx,
         .req = {.machine_mode = self->userdata->mode},
-        .err_buf = buf,
+        .buf = buf,
     };
 
     if(!x86_encoder_parse(self->lex, s, &g)) return false;
@@ -21,7 +21,7 @@ bool x86_encode(RDContext* ctx, RDAddress address, const char* s,
 
     if(!ZYAN_SUCCESS(ZydisEncoderEncodeInstructionAbsolute(
            &g.req, buffer, &length, (ZyanU64)address))) {
-        RD_LOG_FAIL("%s", rd_format_to(buf, "failed to encode '%s'", s));
+        RD_LOG_FAIL_TO(buf, "failed to encode '%s'", s);
         return false;
     }
 
