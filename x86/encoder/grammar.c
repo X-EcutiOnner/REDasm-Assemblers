@@ -117,7 +117,7 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
 
         if(!first) {
             if(!rd_lexer_next(lex, &tok)) {
-                RD_LOG_FAIL_TO(data->buf, "unterminated memory operand");
+                rd_format_to(data->buf, "unterminated memory operand");
                 return false;
             }
 
@@ -125,13 +125,13 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
             minus = tok.type == RD_TOK_MINUS;
 
             if(!plus && !minus) {
-                RD_LOG_FAIL_TO(data->buf, "expected '+' or '-'");
+                rd_format_to(data->buf, "expected '+' or '-'");
                 return false;
             }
         }
 
         if(!rd_lexer_next(lex, &tok)) {
-            RD_LOG_FAIL_TO(data->buf, "unterminated memory operand");
+            rd_format_to(data->buf, "unterminated memory operand");
             return false;
         }
 
@@ -143,7 +143,7 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
                 bool scaled = rd_lexer_try_consume(lex, RD_TOK_ASTERISK, &tok);
 
                 if(scaled && !rd_lexer_next_expect(lex, RD_TOK_NUMBER, &tok)) {
-                    RD_LOG_FAIL_TO(data->buf, "expected scale value after '*'");
+                    rd_format_to(data->buf, "expected scale value after '*'");
                     return false;
                 }
 
@@ -151,13 +151,13 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
 
                 if(scaled || base != ZYDIS_REGISTER_NONE) {
                     if(index != ZYDIS_REGISTER_NONE) {
-                        RD_LOG_FAIL_TO(data->buf,
-                                       "only one index register is allowed");
+                        rd_format_to(data->buf,
+                                     "only one index register is allowed");
                         return false;
                     }
 
                     if(reg == ZYDIS_REGISTER_ESP || reg == ZYDIS_REGISTER_RSP) {
-                        RD_LOG_FAIL_TO(
+                        rd_format_to(
                             data->buf,
                             "ESP/RSP cannot be used as an index register");
                         return false;
@@ -174,7 +174,7 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
 
                 RDAddress addr;
                 if(!rd_get_address(data->ctx, name, &addr)) {
-                    RD_LOG_FAIL_TO(
+                    rd_format_to(
                         data->buf,
                         "unknown register or symbol '%s' in memory operand",
                         name);
@@ -189,7 +189,7 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
         }
         else if(tok.type == RD_TOK_NUMBER) {
             if(have_disp) {
-                RD_LOG_FAIL_TO(data->buf, "only one displacement is allowed");
+                rd_format_to(data->buf, "only one displacement is allowed");
                 return false;
             }
 
@@ -197,7 +197,7 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
             have_disp = true;
         }
         else {
-            RD_LOG_FAIL_TO(data->buf, "unexpected token in memory operand");
+            rd_format_to(data->buf, "unexpected token in memory operand");
             return false;
         }
 
@@ -206,7 +206,7 @@ static bool _displ_operand_rule(RDLexer* lex, void* userdata) {
 
     if(base == ZYDIS_REGISTER_NONE && index == ZYDIS_REGISTER_NONE &&
        !have_disp) {
-        RD_LOG_FAIL_TO(data->buf, "empty memory operand");
+        rd_format_to(data->buf, "empty memory operand");
         return false;
     }
 
@@ -226,14 +226,14 @@ bool x86_encoder_parse(RDLexer* lex, const char* s, X86GrammarData* data) {
 
     RDToken tok;
     if(!rd_lexer_next_expect(lex, RD_TOK_IDENTIFIER, &tok)) {
-        RD_LOG_FAIL_TO(data->buf, "expected mnemonic in '%s'", s);
+        rd_format_to(data->buf, "expected mnemonic in '%s'", s);
         return false;
     }
 
     ZydisMnemonic mnem = _x86_mnemonic_from_token(&tok);
     if(mnem == ZYDIS_MNEMONIC_INVALID) {
-        RD_LOG_FAIL_TO(data->buf, "unknown mnemonic '%.*s' in '%s'",
-                       (int)tok.length, tok.value, s);
+        rd_format_to(data->buf, "unknown mnemonic '%.*s' in '%s'",
+                     (int)tok.length, tok.value, s);
         return false;
     }
 
@@ -249,7 +249,7 @@ bool x86_encoder_parse(RDLexer* lex, const char* s, X86GrammarData* data) {
     RDToken peek;
     if(rd_lexer_peek(lex, &peek)) {
         if(!rd_lexer_try_any(lex, OPERAND_ENTRIES, data)) {
-            RD_LOG_FAIL_TO(data->buf, "expected operand in '%s'", s);
+            rd_format_to(data->buf, "expected operand in '%s'", s);
             return false;
         }
 
@@ -257,20 +257,20 @@ bool x86_encoder_parse(RDLexer* lex, const char* s, X86GrammarData* data) {
             rd_lexer_consume(lex);
 
             if(data->req.operand_count >= ZYDIS_ENCODER_MAX_OPERANDS) {
-                RD_LOG_FAIL_TO(data->buf, "too many operands in '%s'", s);
+                rd_format_to(data->buf, "too many operands in '%s'", s);
                 return false;
             }
 
             if(!rd_lexer_try_any(lex, OPERAND_ENTRIES, data)) {
-                RD_LOG_FAIL_TO(data->buf, "expected operand after ',' in '%s'",
-                               s);
+                rd_format_to(data->buf, "expected operand after ',' in '%s'",
+                             s);
                 return false;
             }
         }
     }
 
     if(!rd_lexer_at_end(lex)) {
-        RD_LOG_FAIL_TO(data->buf, "unexpected trailing input in '%s'", s);
+        rd_format_to(data->buf, "unexpected trailing input in '%s'", s);
         return false;
     }
 
@@ -290,10 +290,10 @@ bool x86_encoder_parse(RDLexer* lex, const char* s, X86GrammarData* data) {
         if(op->type != ZYDIS_OPERAND_TYPE_MEMORY || op->mem.size != 0) continue;
 
         if(!reg_size) {
-            RD_LOG_FAIL_TO(data->buf,
-                           "ambiguous memory operand size in '%s' "
-                           "specify byte/word/dword/qword ptr",
-                           s);
+            rd_format_to(data->buf,
+                         "ambiguous memory operand size in '%s' "
+                         "specify byte/word/dword/qword ptr",
+                         s);
             return false;
         }
 

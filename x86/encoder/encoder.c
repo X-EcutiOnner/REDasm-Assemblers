@@ -21,7 +21,7 @@ bool x86_encode(RDContext* ctx, RDAddress address, const char* s,
 
     if(!ZYAN_SUCCESS(ZydisEncoderEncodeInstructionAbsolute(
            &g.req, buffer, &length, (ZyanU64)address))) {
-        RD_LOG_FAIL_TO(buf, "failed to encode '%s'", s);
+        rd_format_to(buf, "failed to encode '%s'", s);
         return false;
     }
 
