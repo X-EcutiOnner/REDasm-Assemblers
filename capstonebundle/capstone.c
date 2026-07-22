@@ -5,7 +5,7 @@ Capstone* capstone_create(const CapstoneInitData* data, int size) {
     cs_err err = cs_open(data->arch, data->mode, &h);
 
     if(err) {
-        rd_log(RD_LOGLEVEL_FAIL, "%s", cs_strerror(err));
+        RD_LOG_FAIL("%s", cs_strerror(err));
         return NULL;
     }
 
