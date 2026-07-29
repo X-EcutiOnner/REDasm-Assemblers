@@ -275,7 +275,7 @@ static void x86_decode(RDContext* ctx, RDInstruction* instr,
 
         case ZYDIS_MNEMONIC_INT:
         case ZYDIS_MNEMONIC_INTO:
-            rd_fire_instruction_hook(ctx, "x86.int", instr);
+            rd_fire_decode_hook(ctx, "x86.int", instr);
             break;
 
         default: break;
@@ -336,6 +336,11 @@ static void x86_emulate(RDContext* ctx, const RDInstruction* instr,
         case ZYDIS_MNEMONIC_DEC:
         case ZYDIS_MNEMONIC_NEG:
         case ZYDIS_MNEMONIC_NOT: x86_track_math(ctx, instr); break;
+
+        case ZYDIS_MNEMONIC_INT:
+        case ZYDIS_MNEMONIC_INTO:
+            rd_fire_emulate_hook(ctx, "x86.int", instr);
+            break;
 
         default: break;
     }
