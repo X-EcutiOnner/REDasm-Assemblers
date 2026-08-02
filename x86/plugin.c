@@ -380,7 +380,7 @@ static const char* x86_get_reg_name(RDReg reg, RDProcessor* p) {
 static void x86_register_processor(RDProcessorPlugin* plugin,
                                    ZydisMachineMode mode, ZydisStackWidth width,
                                    const char* id, const char* name,
-                                   int addrsize, int intsize) {
+                                   int addrsize) {
     X86UserData* ud = rd_alloc(sizeof(*ud));
     ud->mode = mode;
     ud->width = width;
@@ -389,7 +389,6 @@ static void x86_register_processor(RDProcessorPlugin* plugin,
     plugin->id = id;
     plugin->name = name;
     plugin->ptr_size = addrsize;
-    plugin->int_size = intsize;
     plugin->userdata = ud;
     plugin->decode = x86_decode;
     plugin->encode = x86_encode;
@@ -418,19 +417,19 @@ static RDProcessorPlugin x86_64 = {0};
 void rd_plugin_create(void) {
     x86_register_processor(&x86_16_real, ZYDIS_MACHINE_MODE_REAL_16,
                            ZYDIS_STACK_WIDTH_16, "x86_16_real", "X86_16 (Real)",
-                           sizeof(u16), sizeof(u16));
+                           sizeof(u16));
 
     x86_register_processor(&x86_16, ZYDIS_MACHINE_MODE_LEGACY_16,
                            ZYDIS_STACK_WIDTH_16, "x86_16", "X86_16 (Protected)",
-                           sizeof(u16), sizeof(u16));
+                           sizeof(u16));
 
     x86_register_processor(&x86_32, ZYDIS_MACHINE_MODE_LEGACY_32,
                            ZYDIS_STACK_WIDTH_32, "x86_32", "X86_32",
-                           sizeof(u32), sizeof(u32));
+                           sizeof(u32));
 
     x86_register_processor(&x86_64, ZYDIS_MACHINE_MODE_LONG_64,
                            ZYDIS_STACK_WIDTH_64, "x86_64", "X86_64",
-                           sizeof(u64), sizeof(u64));
+                           sizeof(u64));
 }
 
 void rd_plugin_destroy(void) {
