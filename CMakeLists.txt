@@ -13,8 +13,9 @@ else()
 endif()
 
 add_subdirectory(capstonebundle)
-add_subdirectory(x86)
 add_subdirectory(mips)
+add_subdirectory(x86)
+add_subdirectory(z80)
 
 get_property(subdirs DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY SUBDIRECTORIES)
 
