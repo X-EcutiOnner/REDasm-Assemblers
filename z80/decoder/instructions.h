@@ -25,6 +25,8 @@ static inline Z80Opcode z80_split(u8 b) {
     return ob;
 }
 
-const char* z80_get_mnemonic(Z80InstructionId id);
+const char* z80_get_mnemonic(const RDInstruction* instr, RDProcessor* p);
+bool z80_instr_is_load_store(const Z80Instruction* instr);
+bool z80_instr_is_branch(const Z80Instruction* instr);
 bool z80_find_instruction(RDContext* ctx, RDAddress address,
                           Z80InstructionResult* res);

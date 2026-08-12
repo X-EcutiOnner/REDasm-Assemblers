@@ -2,17 +2,6 @@
 #include "decoder/registers.h"
 #include <redasm/redasm.h>
 
-static const char* _z80_get_mnemonic(const RDInstruction* instr,
-                                     RDProcessor* p) {
-    RD_UNUSED(p);
-    return z80_get_mnemonic(instr->id);
-}
-
-static const char* _z80_get_reg_name(RDReg r, RDProcessor* p) {
-    RD_UNUSED(p);
-    return z80_reg_name((Z80RegId)r);
-}
-
 static void _z80_decode(RDContext* ctx, RDInstruction* instr, RDProcessor* p) {
     RD_UNUSED(p);
 
@@ -32,12 +21,21 @@ static void _z80_emulate(RDContext* ctx, const RDInstruction* instr,
                          RDProcessor* p) {
     RD_UNUSED(p);
 
-    if(rd_instr_is_branch(instr)) { // jump OR call, gates everything below
-        RDXRefType kind = rd_instr_is_call(instr) ? RD_CR_CALL : RD_CR_JUMP;
+    z80_track_regs(ctx, instr);
+    z80_track_derefs(ctx, instr);
 
-        for(int i = 0; i < Z80_MAX_OPERANDS; i++) {
-            if(instr->operands[i].kind == RD_OP_ADDR)
-                rd_add_xref(ctx, instr->address, instr->operands[i].addr, kind);
+    rd_foreach_operand(i, op, instr) {
+        if(op->kind == RD_OP_ADDR) {
+            if(rd_instr_is_call(instr))
+                rd_add_xref(ctx, instr->address, op->addr, RD_CR_CALL);
+            else if(rd_instr_is_jump(instr))
+                rd_add_xref(ctx, instr->address, op->addr, RD_CR_JUMP);
+            else
+                rd_add_xref(ctx, instr->address, op->addr, RD_DR_ADDRESS);
+        }
+        else if(op->kind == Z80_USEROP_IND_NN) {
+            rd_add_xref(ctx, instr->address, op->imm,
+                        (i == 0) ? RD_DR_WRITE : RD_DR_READ);
         }
     }
 
@@ -51,6 +49,15 @@ static bool _z80_render_operand(RDRenderer* r, const RDInstruction* instr,
     const RDOperand* op = &instr->operands[idx];
 
     switch(op->kind) {
+        case RD_OP_IMM: {
+            if(op->size == sizeof(u16)) {
+                rd_renderer_loc(r, (RDAddress)op->imm, 2, RD_NUM_DEFAULT);
+                return true;
+            }
+
+            return false;
+        }
+
         case RD_OP_DISPL: {
             rd_renderer_norm(r, "(");
             rd_renderer_reg(r, op->displ.base);
@@ -74,7 +81,7 @@ static bool _z80_render_operand(RDRenderer* r, const RDInstruction* instr,
 
         case Z80_USEROP_IND_NN: {
             rd_renderer_norm(r, "(");
-            rd_renderer_num(r, (i64)op->imm, 16, 2, RD_NUM_DEFAULT);
+            rd_renderer_loc(r, (i64)op->imm, 0, RD_NUM_DEFAULT);
             rd_renderer_norm(r, ")");
             return true;
         }
@@ -111,8 +118,9 @@ static const RDProcessorPlugin Z80 = {
     .id = "z80",
     .name = "Zilog 80",
     .ptr_size = sizeof(u16),
-    .get_mnemonic = _z80_get_mnemonic,
-    .get_reg_name = _z80_get_reg_name,
+    .get_mnemonic = z80_get_mnemonic,
+    .get_reg_name = z80_get_reg_name,
+    .get_reg_mask = z80_get_reg_mask,
     .decode = _z80_decode,
     .emulate = _z80_emulate,
     .render_operand = _z80_render_operand,

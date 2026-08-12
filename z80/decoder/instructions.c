@@ -63,8 +63,21 @@ static const char* const Z80_MNEMONICS[Z80_INSTR_COUNT] = {
     [Z80_INSTR_INDR] = "indr", [Z80_INSTR_OTDR] = "otdr",
 };
 
-const char* z80_get_mnemonic(Z80InstructionId id) {
-    return id < Z80_INSTR_COUNT ? Z80_MNEMONICS[id] : NULL;
+const char* z80_get_mnemonic(const RDInstruction* instr, RDProcessor* p) {
+    RD_UNUSED(p);
+    return instr->id < Z80_INSTR_COUNT ? Z80_MNEMONICS[instr->id] : NULL;
+}
+
+bool z80_instr_is_load_store(const Z80Instruction* instr) {
+    if(instr->id != Z80_INSTR_LD) return false;
+
+    // only SP destination counts, per policy
+    return instr->operands[0] == Z80_OP_SP;
+}
+
+bool z80_instr_is_branch(const Z80Instruction* instr) {
+    return (instr->flow == RD_IF_JUMP || instr->flow == RD_IF_JUMP_COND ||
+            instr->flow == RD_IF_CALL || instr->flow == RD_IF_CALL_COND);
 }
 
 bool z80_find_instruction(RDContext* ctx, RDAddress address,

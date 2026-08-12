@@ -62,6 +62,7 @@ bool z80_decode_op(const RDContext* ctx, RDInstruction* instr, usize idx,
 
             op->kind = RD_OP_IMM;
             op->imm = (u64)v;
+            op->size = sizeof(u8);
             return true;
         }
 
@@ -69,12 +70,8 @@ bool z80_decode_op(const RDContext* ctx, RDInstruction* instr, usize idx,
             u16 v;
             if(!rd_read_le16(ctx, cur_address, &v)) return false;
 
-            bool is_branch = (res->instr.flow == RD_IF_JUMP ||
-                              res->instr.flow == RD_IF_JUMP_COND ||
-                              res->instr.flow == RD_IF_CALL ||
-                              res->instr.flow == RD_IF_CALL_COND);
-
-            if(is_branch) {
+            if(z80_instr_is_branch(&res->instr) ||
+               z80_instr_is_load_store(&res->instr)) {
                 op->kind = RD_OP_ADDR;
                 op->addr = (RDAddress)v;
             }
@@ -83,6 +80,7 @@ bool z80_decode_op(const RDContext* ctx, RDInstruction* instr, usize idx,
                 op->imm = (u64)v;
             }
 
+            op->size = sizeof(u16);
             return true;
         }
 
@@ -92,6 +90,7 @@ bool z80_decode_op(const RDContext* ctx, RDInstruction* instr, usize idx,
 
             op->kind = Z80_USEROP_IND_N;
             op->imm = (u64)v;
+            op->size = sizeof(u8);
             return true;
         }
 
@@ -101,6 +100,7 @@ bool z80_decode_op(const RDContext* ctx, RDInstruction* instr, usize idx,
 
             op->kind = Z80_USEROP_IND_NN;
             op->imm = (u64)v;
+            op->size = sizeof(u16);
             return true;
         }
 
