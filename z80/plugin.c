@@ -50,7 +50,7 @@ static bool _z80_render_operand(RDRenderer* r, const RDInstruction* instr,
 
     switch(op->kind) {
         case RD_OP_IMM: {
-            if(op->size == sizeof(u16)) {
+            if(op->size == sizeof(u16) && op->imm != 0) {
                 rd_renderer_loc(r, (RDAddress)op->imm, 2, RD_NUM_DEFAULT);
                 return true;
             }
