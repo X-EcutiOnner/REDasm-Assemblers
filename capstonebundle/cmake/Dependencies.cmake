@@ -11,7 +11,7 @@ function(setup_dependencies)
     else()
         CPMAddPackage(
             NAME capstone
-            GIT_TAG "6.0.0-Alpha7"
+            GIT_TAG "6.0.0-Alpha10"
             GITHUB_REPOSITORY "capstone-engine/capstone"
             GIT_SHALLOW ON
 
