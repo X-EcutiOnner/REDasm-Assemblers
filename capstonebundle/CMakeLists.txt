@@ -18,6 +18,7 @@ target_sources(${PROJECT_NAME}
         arm/arm32/lifter.c
         arm/arm32/thumb.c
         arm/arm64.c
+        mos65xx/mos6502.c
         capstone.c
         plugin.c
 )
