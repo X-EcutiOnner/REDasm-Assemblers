@@ -11,8 +11,7 @@ static const CapstoneInitData ARM64_BE_INIT = {
     .mode = CS_MODE_ARM | CS_MODE_BIG_ENDIAN,
 };
 
-static void _arm64_decode(RDContext* ctx, RDInstruction* instr,
-                          RDProcessor* p) {
+static void arm64_decode(RDContext* ctx, RDInstruction* instr, RDProcessor* p) {
     char data[sizeof(u32)];
     if(!rd_read(ctx, instr->address, &data, rd_count_of(data))) return;
 
@@ -98,8 +97,8 @@ static void _arm64_decode(RDContext* ctx, RDInstruction* instr,
     }
 }
 
-static void _arm64_emulate(RDContext* ctx, const RDInstruction* instr,
-                           RDProcessor* p) {
+static void arm64_emulate(RDContext* ctx, const RDInstruction* instr,
+                          RDProcessor* p) {
     RD_UNUSED(p);
 
     rd_foreach_operand(i, op, instr) {
@@ -125,8 +124,8 @@ static void _arm64_emulate(RDContext* ctx, const RDInstruction* instr,
     if(rd_instr_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
 
-static bool _arm64_render_operand(RDRenderer* r, const RDInstruction* instr,
-                                  int idx, RDProcessor* p) {
+static bool arm64_render_operand(RDRenderer* r, const RDInstruction* instr,
+                                 int idx, RDProcessor* p) {
     RD_UNUSED(p);
     const RDOperand* op = &instr->operands[idx];
 
@@ -155,9 +154,9 @@ const RDProcessorPlugin ARM64_LE = {
     .userdata = (void*)&ARM64_LE_INIT,
     .create = capstone_plugin_create,
     .destroy = capstone_plugin_destroy,
-    .decode = _arm64_decode,
-    .emulate = _arm64_emulate,
-    .render_operand = _arm64_render_operand,
+    .decode = arm64_decode,
+    .emulate = arm64_emulate,
+    .render_operand = arm64_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
     .get_reg_name = capstone_plugin_get_reg_name,
 };
@@ -171,9 +170,9 @@ const RDProcessorPlugin ARM64_BE = {
     .userdata = (void*)&ARM64_BE_INIT,
     .create = capstone_plugin_create,
     .destroy = capstone_plugin_destroy,
-    .decode = _arm64_decode,
-    .emulate = _arm64_emulate,
-    .render_operand = _arm64_render_operand,
+    .decode = arm64_decode,
+    .emulate = arm64_emulate,
+    .render_operand = arm64_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
     .get_reg_name = capstone_plugin_get_reg_name,
 };

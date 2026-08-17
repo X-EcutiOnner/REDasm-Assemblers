@@ -23,7 +23,7 @@ static RDAddress _arm32_get_pc(RDAddress address) {
     return address + (sizeof(u32) * 2);
 }
 
-static RDProcessor* _arm32_create(const RDProcessorPlugin* p) {
+static RDProcessor* arm32_create(const RDProcessorPlugin* p) {
     const CapstoneInitData* data = (const CapstoneInitData*)p->userdata;
 
     ARM32Capstone* self =
@@ -38,7 +38,7 @@ static RDProcessor* _arm32_create(const RDProcessorPlugin* p) {
     return (RDProcessor*)self;
 }
 
-static void _arm32_destroy(RDProcessor* p) {
+static void arm32_destroy(RDProcessor* p) {
     if(!p) return;
 
     ARM32Capstone* self = (ARM32Capstone*)p;
@@ -121,8 +121,7 @@ void capstone_arm32_decode(RDContext* ctx, RDInstruction* instr,
     }
 }
 
-static void _arm32_decode(RDContext* ctx, RDInstruction* instr,
-                          RDProcessor* p) {
+static void arm32_decode(RDContext* ctx, RDInstruction* instr, RDProcessor* p) {
     ARM32Capstone* self = (ARM32Capstone*)p;
 
     RDRegValue t;
@@ -134,8 +133,8 @@ static void _arm32_decode(RDContext* ctx, RDInstruction* instr,
         capstone_arm32_decode(ctx, instr, (RDProcessor*)self);
 }
 
-static void _arm32_emulate(RDContext* ctx, const RDInstruction* instr,
-                           RDProcessor* p) {
+static void arm32_emulate(RDContext* ctx, const RDInstruction* instr,
+                          RDProcessor* p) {
     ARM32Capstone* self = (ARM32Capstone*)p;
 
     RDRegValue t;
@@ -161,10 +160,10 @@ const RDProcessorPlugin ARM32_LE = {
     .flags = RD_PF_LE,
     .ptr_size = sizeof(u32),
     .userdata = (void*)&ARM32_LE_INIT,
-    .create = _arm32_create,
-    .destroy = _arm32_destroy,
-    .decode = _arm32_decode,
-    .emulate = _arm32_emulate,
+    .create = arm32_create,
+    .destroy = arm32_destroy,
+    .decode = arm32_decode,
+    .emulate = arm32_emulate,
     .lift = capstone_arm32_lift,
     .render_operand = capstone_plugin_arm32_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
@@ -178,10 +177,10 @@ const RDProcessorPlugin ARM32_BE = {
     .flags = RD_PF_BE,
     .ptr_size = sizeof(u32),
     .userdata = (void*)&ARM32_BE_INIT,
-    .create = _arm32_create,
-    .destroy = _arm32_destroy,
-    .decode = _arm32_decode,
-    .emulate = _arm32_emulate,
+    .create = arm32_create,
+    .destroy = arm32_destroy,
+    .decode = arm32_decode,
+    .emulate = arm32_emulate,
     .lift = capstone_arm32_lift,
     .render_operand = capstone_plugin_arm32_render_operand,
     .get_mnemonic = capstone_plugin_get_mnemonic,
