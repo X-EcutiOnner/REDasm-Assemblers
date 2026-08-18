@@ -187,6 +187,8 @@ static void mos6502_emulate(RDContext* ctx, const RDInstruction* instr,
                 addr = op->addr;
             else if(op->kind == RD_OP_MEM)
                 addr = op->mem;
+            else if(op->kind == RD_OP_DISPL)
+                addr = (RDAddress)op->displ.offset;
             else
                 continue;
 
