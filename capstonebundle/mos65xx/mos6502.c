@@ -133,6 +133,7 @@ static void mos6502_decode(RDContext* ctx, RDInstruction* instr,
                         op->mem = addr;
                         op->size = sizeof(u8);
                         op->userdata1 = MOS65XX_REG_X;
+                        instr->indirect = true;
                         break;
 
                     case MOS65XX_AM_ZP_IND_Y: // ($zp),Y
@@ -140,12 +141,14 @@ static void mos6502_decode(RDContext* ctx, RDInstruction* instr,
                         op->mem = addr;
                         op->size = sizeof(u8);
                         op->userdata1 = MOS65XX_REG_Y;
+                        instr->indirect = true;
                         break;
 
                     case MOS65XX_AM_ABS_IND:
                         op->kind = RD_OP_MEM;
                         op->mem = addr;
                         op->size = sizeof(u16);
+                        instr->indirect = true;
                         break;
 
                     default:
@@ -201,6 +204,13 @@ static void mos6502_emulate(RDContext* ctx, const RDInstruction* instr,
                 rd_add_xref(ctx, instr->address, addr, RD_DR_WRITE);
             else
                 rd_add_xref(ctx, instr->address, addr, RD_DR_ADDRESS);
+
+            if(instr->indirect) {
+                // zero-page pointer bytes for the indirect modes: 2 bytes
+                rd_auto_type(ctx, addr, "u16", 0, RD_TYPE_PTR);
+            }
+            else if(r || w)
+                rd_auto_type(ctx, addr, "u8", 0, RD_TYPE_NONE);
         }
     }
 
