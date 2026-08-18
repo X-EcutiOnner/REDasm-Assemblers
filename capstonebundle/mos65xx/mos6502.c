@@ -8,6 +8,49 @@ static const CapstoneInitData MOS6502_INIT = {
     .mode = CS_MODE_MOS65XX_6502,
 };
 
+static bool mos6502_is_read(u32 id) {
+    switch(id) {
+        case MOS65XX_INS_LDA:
+        case MOS65XX_INS_LDX:
+        case MOS65XX_INS_LDY:
+        case MOS65XX_INS_CMP:
+        case MOS65XX_INS_CPX:
+        case MOS65XX_INS_CPY:
+        case MOS65XX_INS_ADC:
+        case MOS65XX_INS_SBC:
+        case MOS65XX_INS_AND:
+        case MOS65XX_INS_ORA:
+        case MOS65XX_INS_EOR:
+        case MOS65XX_INS_BIT:
+
+        // Read-modify-write: these read the memory operand before
+        // writing the result back, so they're read AND write.
+        case MOS65XX_INS_ASL:
+        case MOS65XX_INS_LSR:
+        case MOS65XX_INS_ROL:
+        case MOS65XX_INS_ROR:
+        case MOS65XX_INS_INC:
+        case MOS65XX_INS_DEC: return true;
+
+        default: return false;
+    }
+}
+
+static bool mos6502_is_write(u32 id) {
+    switch(id) {
+        case MOS65XX_INS_STA:
+        case MOS65XX_INS_STX:
+        case MOS65XX_INS_STY:
+        case MOS65XX_INS_ASL:
+        case MOS65XX_INS_LSR:
+        case MOS65XX_INS_ROL:
+        case MOS65XX_INS_ROR:
+        case MOS65XX_INS_INC:
+        case MOS65XX_INS_DEC: return true;
+        default: return false;
+    }
+}
+
 static void mos6502_decode(RDContext* ctx, RDInstruction* instr,
                            RDProcessor* p) {
     char data[MOS6502_INSTRUCTION_MAX];
@@ -59,24 +102,57 @@ static void mos6502_decode(RDContext* ctx, RDInstruction* instr,
                 switch(d->am) {
                     case MOS65XX_AM_REL:
                     case MOS65XX_AM_ABS:
-                    case MOS65XX_AM_ZP:
+                    case MOS65XX_AM_ZP: {
                         op->kind = RD_OP_ADDR;
                         op->addr = addr;
+                        op->size =
+                            d->am == MOS65XX_AM_ZP ? sizeof(u8) : sizeof(u16);
                         break;
+                    }
 
                     case MOS65XX_AM_ZP_X:
-                    case MOS65XX_AM_ABS_X:
+                    case MOS65XX_AM_ABS_X: {
                         rd_instr_set_op_displ(instr, i, RD_REGID_UNKNOWN,
                                               MOS65XX_REG_X, 1, (i64)addr);
+                        op->size =
+                            d->am == MOS65XX_AM_ZP_X ? sizeof(u8) : sizeof(u16);
                         break;
+                    }
 
                     case MOS65XX_AM_ZP_Y:
-                    case MOS65XX_AM_ABS_Y:
+                    case MOS65XX_AM_ABS_Y: {
                         rd_instr_set_op_displ(instr, i, RD_REGID_UNKNOWN,
                                               MOS65XX_REG_Y, 1, (i64)addr);
+                        op->size =
+                            d->am == MOS65XX_AM_ZP_X ? sizeof(u8) : sizeof(u16);
+                        break;
+                    }
+
+                    case MOS65XX_AM_ZP_X_IND: // ($zp,X)
+                        op->kind = RD_OP_MEM;
+                        op->mem = addr;
+                        op->size = sizeof(u8);
+                        op->userdata1 = MOS65XX_REG_X;
                         break;
 
-                    default: op->kind = RD_OP_STUB; break;
+                    case MOS65XX_AM_ZP_IND_Y: // ($zp),Y
+                        op->kind = RD_OP_MEM;
+                        op->mem = addr;
+                        op->size = sizeof(u8);
+                        op->userdata1 = MOS65XX_REG_Y;
+                        break;
+
+                    case MOS65XX_AM_ABS_IND:
+                        op->kind = RD_OP_MEM;
+                        op->mem = addr;
+                        op->size = sizeof(u16);
+                        break;
+
+                    default:
+                        op->kind = RD_OP_STUB;
+                        RD_LOG_WARN("stub memory operand %d @ %x, (value %d)",
+                                    i, instr->address, d->am);
+                        break;
                 }
 
                 break;
@@ -104,6 +180,27 @@ static void mos6502_emulate(RDContext* ctx, const RDInstruction* instr,
                 rd_add_xref(ctx, instr->address, (RDAddress)target, t);
         }
     }
+    else {
+        rd_foreach_operand(i, op, instr) {
+            RDAddress addr;
+            if(op->kind == RD_OP_ADDR)
+                addr = op->addr;
+            else if(op->kind == RD_OP_MEM)
+                addr = op->mem;
+            else
+                continue;
+
+            bool r = mos6502_is_read(instr->id),
+                 w = mos6502_is_write(instr->id);
+
+            if(r && !w)
+                rd_add_xref(ctx, instr->address, addr, RD_DR_READ);
+            else if(w && !r)
+                rd_add_xref(ctx, instr->address, addr, RD_DR_WRITE);
+            else
+                rd_add_xref(ctx, instr->address, addr, RD_DR_ADDRESS);
+        }
+    }
 
     if(rd_instr_can_flow(instr)) rd_flow(ctx, instr->address + instr->length);
 }
@@ -115,13 +212,41 @@ static bool mos6502_render_operand(RDRenderer* r, const RDInstruction* instr,
     const RDOperand* op = &instr->operands[idx];
 
     switch(op->kind) {
-        // 6502 immediates are conventionally written "#$nn" .
-        // without the "#" this is visually indistinguishable from a zero-page
-        // address, which is a real (not just cosmetic) ambiguity for a reader.
-        case RD_OP_IMM:
+        case RD_OP_IMM: {
+            // 6502 immediates are conventionally written "#$nn" .
+            // without the "#" this is visually indistinguishable from a
+            // zero-page address, which is a real (not just cosmetic) ambiguity
+            // for a reader.
+
             rd_renderer_norm(r, "#$");
             rd_renderer_num(r, op->s_imm, 16, 2, RD_NUM_NOADDR);
             return true;
+        }
+
+        case RD_OP_ADDR:
+            rd_renderer_norm(r, "$");
+            rd_renderer_loc(r, op->addr, op->size * 2, RD_NUM_NOADDR);
+            return true;
+
+        case RD_OP_MEM: {
+            rd_renderer_norm(r, "(");
+            rd_renderer_norm(r, "$");
+            rd_renderer_loc(r, op->mem, op->size * 2, RD_NUM_NOADDR);
+
+            if(op->userdata1 == MOS65XX_REG_X) {
+                rd_renderer_norm(r, ",");
+                rd_renderer_reg(r, MOS65XX_REG_X);
+            }
+
+            rd_renderer_norm(r, ")");
+
+            if(op->userdata1 == MOS65XX_REG_Y) {
+                rd_renderer_norm(r, ",");
+                rd_renderer_reg(r, MOS65XX_REG_Y);
+            }
+
+            return true;
+        }
 
         case RD_OP_DISPL: {
             // Only ever reached for abs,X / abs,Y / zp,X / zp,Y
@@ -130,9 +255,8 @@ static bool mos6502_render_operand(RDRenderer* r, const RDInstruction* instr,
             // "[base+index+disp]" renderer doesn't apply.
             // This is really "$addr,IndexReg".
 
-            unsigned width = op->userdata2 ? sizeof(u16) : sizeof(u32);
             rd_renderer_norm(r, "$");
-            rd_renderer_loc(r, (RDAddress)op->displ.offset, width,
+            rd_renderer_loc(r, (RDAddress)op->displ.offset, op->size * 2,
                             RD_NUM_NOADDR);
             rd_renderer_norm(r, ",");
             rd_renderer_reg(r, op->displ.index);
