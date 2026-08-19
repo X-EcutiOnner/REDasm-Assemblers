@@ -2,19 +2,34 @@
 #include "arm/arm32/thumb.h"
 #include "arm/arm64.h"
 #include "mos65xx/mos6502.h"
+#include <capstone/capstone.h>
 #include <redasm/redasm.h>
 
+#define capstonebundle_register(arch, ...)                                     \
+    do {                                                                       \
+        if(cs_support(arch)) {                                                 \
+            __VA_ARGS__                                                        \
+        }                                                                      \
+        else                                                                   \
+            RD_LOG_WARN("missing " #arch " support, skipping registration");   \
+    } while(0)
+
 void rd_plugin_create(void) {
-    rd_register_processor(&THUMB_LE);
-    rd_register_processor(&THUMB_BE);
+    capstonebundle_register(CS_ARCH_ARM, {
+        rd_register_processor(&THUMB_LE);
+        rd_register_processor(&THUMB_BE);
 
-    rd_register_processor(&ARM32_LE);
-    rd_register_processor(&ARM32_BE);
+        rd_register_processor(&ARM32_LE);
+        rd_register_processor(&ARM32_BE);
+    });
 
-    rd_register_processor(&ARM64_LE);
-    rd_register_processor(&ARM64_BE);
+    capstonebundle_register(CS_ARCH_AARCH64, {
+        rd_register_processor(&ARM64_LE);
+        rd_register_processor(&ARM64_BE);
+    });
 
-    rd_register_processor(&MOS6502);
+    capstonebundle_register(CS_ARCH_MOS65XX,
+                            { rd_register_processor(&MOS6502); });
 }
 
 const char* rd_plugin_version(void) {
