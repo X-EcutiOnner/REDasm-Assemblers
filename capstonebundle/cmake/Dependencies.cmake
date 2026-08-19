@@ -17,9 +17,10 @@ function(setup_dependencies)
 
             OPTIONS 
                 "CAPSTONE_ARCHITECTURE_DEFAULT OFF"
-                "CAPSTONE_ARM_SUPPORT ON"
-                "CAPSTONE_AARCH64_SUPPORT ON"
-                "CAPSTONE_MOS65XX_SUPPORT ON"
+                "CAPSTONE_ARM_SUPPORT          ON"
+                "CAPSTONE_AARCH64_SUPPORT      ON"
+                "CAPSTONE_MOS65XX_SUPPORT      ON"
+                "CAPSTONE_XTENSA_SUPPORT       ON"
         )
     endif()
 endfunction()
