@@ -87,7 +87,7 @@ static bool _x86_is_addr_operand(const RDContext* ctx,
 static void _x86_try_set_type(RDContext* ctx, const RDOperand* op,
                               RDAddress address) {
     const RDSegment* seg = rd_find_segment(ctx, address);
-    if(!seg || (seg->perm & RD_SP_X)) return;
+    if(!seg || (rd_segment_get_perm(seg) & RD_SP_X)) return;
 
     const char* t = NULL;
 
