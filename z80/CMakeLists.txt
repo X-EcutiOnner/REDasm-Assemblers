@@ -14,7 +14,7 @@ target_sources(${PROJECT_NAME}
         decoder/instructions.c
         decoder/registers.c
         decoder/table.c
-        plugin.c
+        module.c
 )
 
 target_include_directories(${PROJECT_NAME}

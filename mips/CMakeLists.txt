@@ -15,7 +15,7 @@ target_sources(${PROJECT_NAME}
         decoder/macros.c
         decoder/registers.c
         lifter.c
-        plugin.c
+        module.c
         registers.c
 )
 

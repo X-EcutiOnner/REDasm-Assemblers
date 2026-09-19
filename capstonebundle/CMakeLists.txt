@@ -21,7 +21,7 @@ target_sources(${PROJECT_NAME}
         mos65xx/mos6502.c
         xtensa/xtensa.c
         capstone.c
-        plugin.c
+        module.c
 )
 
 target_include_directories(${PROJECT_NAME}

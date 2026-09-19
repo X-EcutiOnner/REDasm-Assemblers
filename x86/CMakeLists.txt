@@ -15,8 +15,8 @@ target_sources(${PROJECT_NAME}
     PRIVATE 
         encoder/encoder.c
         encoder/grammar.c
-        plugin.c
         lifter.c
+        module.c
         common.c
         registers.c
 )
